@@ -823,9 +823,21 @@
       const text = (node.textContent || "").replace(/\s+/g, " ").trim();
       if (!text || text.length > 120 || ADD_PROPERTY_RE.test(text)) continue;
       const tokenMatch = text.match(PROPERTY_TOKEN_RE);
-      if (!tokenMatch) continue;
-      const token = tokenMatch[1].replace(/[),.;]+$/, "");
-      if (!propertyTokenHost(token)) continue;
+      let token = tokenMatch?.[1].replace(/[),.;]+$/, "") || "";
+      if (!token) {
+        // Search Console renders domain Properties as a bare host (for example,
+        // "aetheer.com") rather than exposing the sc-domain: resource ID in text.
+        // Use the first rendered line so translated subtitles aren't mistaken for a host.
+        const renderedLabel = String(node.innerText || "").split(/\r?\n/).map((part) => part.trim()).find(Boolean) || "";
+        const hostLabel = renderedLabel.match(/^((?:[a-z0-9-]+\.)+[a-z0-9-]+)(?=$|[^a-z0-9.-])/i)?.[1] || "";
+        if (hostLabel) {
+          try {
+            const host = new URL(`https://${hostLabel.replace(/\.$/, "")}`).hostname.toLowerCase();
+            if (host && host.includes(".") && !host.includes("..")) token = `sc-domain:${host}`;
+          } catch { }
+        }
+      }
+      if (!token || !propertyTokenHost(token)) continue;
       if (unverifiedHeader && node !== unverifiedHeader && (unverifiedHeader.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
       let navigateUrl = "";
       if (typeof node.querySelector === "function") {
@@ -846,7 +858,7 @@
         previous.navigateUrl = navigateUrl;
       }
     }
-    const available = [...seen.values()].map((entry) => entry.token);
+    const available = [...seen.values()].map((entry) => entry.token.startsWith("sc-domain:") ? entry.token.slice("sc-domain:".length) : entry.token);
     const currentRaw = currentResourceIdRaw();
     const matching = [...seen.values()]
       .filter((entry) => entry.score >= 0)

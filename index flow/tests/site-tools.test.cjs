@@ -13,20 +13,27 @@ class FakeHTMLElement {
     this.attrs = attrs;
     this.disabled = false;
     this.clicked = false;
+    this.children = [];
   }
   getBoundingClientRect() { return { width: 100, height: 20 }; }
   getAttribute(name) { return this.attrs[name] || null; }
+  querySelector(selector) { return selector === 'a[href]' ? (this.links || [])[0] || null : null; }
   querySelectorAll(selector) { return selector === 'a[href]' ? (this.links || []) : []; }
+  dispatchEvent() { this.clicked = true; return true; }
   click() { this.clicked = true; }
 }
 
-function createGscHarness({ bodyText = '', rows = [], actions = [], location = 'https://search.google.com/search-console/index?resource_id=sc-domain%3Aexample.com' } = {}) {
+function createGscHarness({ bodyText = '', rows = [], actions = [], propertyOptions = [], location = 'https://search.google.com/search-console/index?resource_id=sc-domain%3Aexample.com' } = {}) {
   let contentListener;
   const document = {
     body: { innerText: bodyText },
     title: 'Google Search Console',
-    querySelector: () => null,
+    querySelector(selector) {
+      if (selector === "[jsname='iuXDpb']" && propertyOptions.length) return { getAttribute: () => null, childElementCount: 1, children: [{}] };
+      return null;
+    },
     querySelectorAll(selector) {
+      if (selector === "[role='option'], [jsname='iuXDpb'] *, [role='listbox'] *") return propertyOptions;
       if (selector === '[role="row"]' || selector === '[role="row"], table tr') return rows;
       if (selector === 'table tr') return [];
       if (selector.includes('button') || selector.includes('[role=button]') || selector.includes('[role=menuitem]')) return actions;
@@ -40,6 +47,7 @@ function createGscHarness({ bodyText = '', rows = [], actions = [], location = '
     window: {},
     location: new URL(location),
     HTMLElement: FakeHTMLElement,
+    URL,
     getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
     chrome: {
       runtime: {
@@ -67,6 +75,17 @@ function createGscHarness({ bodyText = '', rows = [], actions = [], location = '
     }
   };
 }
+
+test('property picker recognizes bare domain Properties such as aetheer.com', async () => {
+  const property = new FakeHTMLElement('aetheer.com موقع إلكتروني في النطاق', { role: 'option' });
+  const harness = createGscHarness({
+    propertyOptions: [property],
+    location: 'https://search.google.com/search-console?resource_id=sc-domain%3Aother-example.com'
+  });
+  const result = await harness.send({ type: 'SWITCH_PROPERTY', host: 'aetheer.com' });
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.equal(result.resourceId, 'sc-domain:aetheer.com');
+});
 
 test('coverage scan extracts Not Started issue rows and makes validation available only when Google exposes its action', async () => {
   const issue = new FakeHTMLElement("Excluded by 'noindex' tag\nWebsite\nNot Started\n4,422");
