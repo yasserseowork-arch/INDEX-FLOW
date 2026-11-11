@@ -312,6 +312,15 @@
           <div class="site-property-line"><span>الموقع الحالي:</span><strong id="sitePropertyLabel">افتح Search Console أو حمّل Sitemap أولًا</strong></div>
         </header>
 
+        <section class="card site-tool-card auto-audit-card" aria-labelledby="autoAuditTitle">
+          <div class="site-tool-title"><span class="site-tool-icon">✦</span><div><h3 id="autoAuditTitle">فحص الموقع تلقائيًا</h3><p>اكتب رابط الموقع مرة واحدة، وIndexFlow يفحص تقارير GSC ويحدّث الإجراءات المتاحة.</p></div></div>
+          <label class="site-tool-label" for="siteAuditUrl">رابط الموقع</label>
+          <input id="siteAuditUrl" class="site-tool-input" type="url" inputmode="url" placeholder="https://example.com" autocomplete="url" required>
+          <button id="runSiteAudit" class="button button-primary" type="button">ابدأ الفحص والتنفيذ التلقائي</button>
+          <div id="fullAuditSummary" class="full-audit-summary" hidden></div>
+          <p class="site-tool-note">سينفّذ الإضافة الإجراءات المتاحة في Search Console، مثل إرسال Sitemap المكتشفة وطلب إعادة زحف robots.txt. إصلاح noindex أو 403/404 أو مشاكل السرعة يتطلب تعديل الموقع أو الخادم؛ الإضافة ستعرض السبب والخطوة المطلوبة ولا تغيّر الموقع من نفسها.</p>
+        </section>
+
         <section class="card site-tool-card" aria-labelledby="coverageToolsTitle">
           <div class="site-tool-title"><span class="site-tool-icon">▤</span><div><h3 id="coverageToolsTitle">تغطية الصفحات ومشاكل الفهرسة</h3><p>اعرض أسباب الاستبعاد وحالة التحقق، بما فيها Not Started إن ظهرت لهذا الموقع.</p></div></div>
           <div class="site-tool-actions">
@@ -326,16 +335,13 @@
         </section>
 
         <section class="card site-tool-card" aria-labelledby="sitemapToolsTitle">
-          <div class="site-tool-title"><span class="site-tool-icon">⌁</span><div><h3 id="sitemapToolsTitle">خرائط الموقع</h3><p>افتح تقرير Sitemap، أو أرسل / أعد إرسال رابط خريطة إلى Search Console.</p></div></div>
-          <label class="site-tool-label" for="gscSitemapUrl">رابط خريطة الموقع</label>
-          <input id="gscSitemapUrl" class="site-tool-input" type="url" inputmode="url" placeholder="https://example.com/sitemap.xml" autocomplete="url">
+          <div class="site-tool-title"><span class="site-tool-icon">⌁</span><div><h3 id="sitemapToolsTitle">خرائط الموقع</h3><p>افتح تقرير Sitemap أو اقرأ الخرائط المرسلة لهذا الموقع.</p></div></div>
           <div class="site-tool-actions">
             <button id="openSitemapsReport" class="button button-secondary" type="button">فتح تقرير Sitemaps</button>
             <button id="scanSitemapsReport" class="button button-secondary" type="button">قراءة الخرائط المرسلة</button>
-            <button id="submitGscSitemap" class="button button-primary" type="button">إرسال / تحديث Sitemap</button>
           </div>
           <div id="sitemapReportSummary" class="coverage-issue-list" aria-live="polite"></div>
-          <p class="site-tool-note">إعادة الإرسال لا تضمن الفهرسة الفورية؛ Google هو من يقرأ الخريطة ويقرر الزحف.</p>
+          <p class="site-tool-note">أثناء الفحص التلقائي، يكتشف IndexFlow خريطة الموقع من robots.txt أو المسارات الشائعة، ويتجنب إعادة إرسال خريطة مسجلة بالفعل.</p>
         </section>
 
         <section class="card site-tool-card" aria-labelledby="robotsToolsTitle">

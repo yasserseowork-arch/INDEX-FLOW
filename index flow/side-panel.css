@@ -630,3 +630,14 @@ html[dir="rtl"] [data-wizard-step].slide-back { animation-name: slide-forward; }
 #workflowView { display: grid; gap: 14px; }
 .coverage-issue-copy { display: grid; gap: 3px; min-width: 0; }
 .coverage-advice { color: var(--muted, #788493); font-size: 9px; line-height: 1.55; }
+.auto-audit-card > #runSiteAudit { width: 100%; justify-content: center; }
+.full-audit-summary { display: grid; gap: 6px; padding: 9px; background: #f5f8fb; border: 1px solid #dfe6ee; border-radius: 10px; }
+.full-audit-summary.busy { color: #344054; font-size: 10px; line-height: 1.6; }
+.full-audit-summary.error { color: #9b2838; background: #fff1f2; border-color: #f3ccd1; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.full-audit-line { display: grid; gap: 2px; padding: 7px 8px; background: #fff; border: 1px solid #e6ebf0; border-radius: 8px; }
+.full-audit-line strong { color: var(--primary); font-size: 10px; }
+.full-audit-line span { color: #526274; font-size: 9.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.full-audit-line.warning { border-inline-start: 3px solid var(--warning); }
+.full-audit-line.success { border-inline-start: 3px solid var(--success); }
+.full-audit-line.muted { border-inline-start: 3px solid #98a2b3; }
+.full-audit-note { padding: 5px 2px 0; color: var(--muted, #788493); font-size: 9px; line-height: 1.6; }

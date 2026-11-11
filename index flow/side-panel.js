@@ -1094,6 +1094,7 @@ async function ingestFile(file) {
 }
 let siteToolsBusy = false;
 let lastCoverageReport = null;
+let lastAuditedSiteUrl = "";
 function setSiteToolsMode(enabled) {
   const workflow = document.getElementById("workflowView");
   const tools = document.getElementById("siteToolsView");
@@ -1117,6 +1118,8 @@ function setSiteToolsStatus(message, level = "info") {
 function setSiteToolsBusy(busy) {
   siteToolsBusy = busy;
   for (const button of document.querySelectorAll("#siteToolsView button")) button.disabled = busy;
+  const siteInput = document.getElementById("siteAuditUrl");
+  if (siteInput) siteInput.disabled = busy;
 }
 async function refreshGscContext() {
   try {
@@ -1125,7 +1128,16 @@ async function refreshGscContext() {
       document.getElementById("sitePropertyLabel").textContent = response.context.label || response.context.resourceId || "غير محدد";
       if (response.availability?.inspectedNavigation && response.availability.coreWebVitalsVisible === false) document.getElementById("cwvToolsCard").hidden = true;
       else if (response.availability?.coreWebVitalsVisible === true) document.getElementById("cwvToolsCard").hidden = false;
-      if (!document.getElementById("gscSitemapUrl").value && state.settings.sitemapUrl) document.getElementById("gscSitemapUrl").value = state.settings.sitemapUrl;
+      const siteInput = document.getElementById("siteAuditUrl");
+      if (!siteInput.value) {
+        let candidate = state.settings.sitemapUrl || "";
+        if (!candidate && response.context.resourceId) {
+          candidate = response.context.resourceId.startsWith("sc-domain:")
+            ? `https://${response.context.resourceId.slice("sc-domain:".length)}/`
+            : response.context.resourceId;
+        }
+        try { siteInput.value = new URL(candidate).origin + "/"; } catch { }
+      }
     }
   } catch {
     // The GSC helper view remains usable for navigation guidance even before a property is open.
@@ -1243,12 +1255,88 @@ function renderSitemapReport(report) {
     list.append(item);
   }
 }
+function renderFullAuditSummary(audit) {
+  const root = document.getElementById("fullAuditSummary");
+  root.replaceChildren();
+  root.hidden = false;
+  root.className = "full-audit-summary";
+  const addLine = (title, detail, tone = "") => {
+    const line = document.createElement("div");
+    line.className = `full-audit-line ${tone}`;
+    const heading = document.createElement("strong");
+    heading.textContent = title;
+    const text = document.createElement("span");
+    text.textContent = detail;
+    line.append(heading, text);
+    root.append(line);
+  };
+  const pages = audit.pages || {};
+  addLine("تغطية الصفحات", `${pages.notStartedCount || 0} حالة Not Started · ${pages.rowCount || 0} صف ظاهر`, pages.notStartedCount ? "warning" : "success");
+  const sitemapAction = audit.sitemapAction || {};
+  const discovered = audit.sitemapDiscovery?.sitemaps || [];
+  addLine("Sitemap", sitemapAction.message || (discovered.length ? `تم اكتشاف ${discovered.length} خريطة.` : "لم يتم العثور على Sitemap قابلة للقراءة."), sitemapAction.submitted ? "success" : "");
+  const robots = audit.sitemapDiscovery || {};
+  const robotDetail = `robots.txt: HTTP ${robots.robotsStatus ?? "غير متاح"}. ${audit.robotsRecrawl?.message || "لم يظهر خيار إعادة الزحف."}`;
+  addLine("robots.txt", robotDetail, audit.robotsRecrawl?.requested ? "success" : "");
+  for (const [label, report] of [["Core Web Vitals — الجوال", audit.cwvMobile], ["Core Web Vitals — سطح المكتب", audit.cwvDesktop]]) {
+    if (!report) continue;
+    const detail = report.availability || (report.cwvNoData ? "لا توجد بيانات كافية لهذا التقرير." : report.rowCount ? `${report.rowCount} صف/مشكلة ظاهرة في التقرير.` : "التقرير اختياري ولم تظهر بيانات مشكلة.");
+    addLine(label, detail, report.availability || report.cwvNoData ? "muted" : "");
+  }
+  const note = document.createElement("small");
+  note.className = "full-audit-note";
+  note.textContent = "الإضافة نفّذت إجراءات Search Console المتاحة فقط. راجع توصيات الصفحات أدناه؛ التعديلات التقنية على الموقع تتطلب وصولًا للموقع أو الخادم.";
+  root.append(note);
+}
+async function startFullSiteAudit() {
+  if (siteToolsBusy) return;
+  const input = document.getElementById("siteAuditUrl");
+  let url;
+  try {
+    const raw = input.value.trim();
+    url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password || !url.hostname.includes(".")) throw new Error("اكتب رابط موقع صالحًا مثل https://example.com.");
+  } catch (error) {
+    setSiteToolsStatus(error instanceof Error ? error.message : "اكتب رابط موقع صالحًا مثل https://example.com.", "error");
+    input.focus();
+    return;
+  }
+  const siteUrl = `${url.origin}/`;
+  input.value = siteUrl;
+  setSiteToolsBusy(true);
+  setSiteToolsStatus("جارٍ فحص الموقع وSearch Console. قد يستغرق ذلك بعض الوقت…");
+  const summary = document.getElementById("fullAuditSummary");
+  summary.hidden = false;
+  summary.className = "full-audit-summary busy";
+  summary.textContent = "جارٍ قراءة الصفحات وSitemaps وrobots.txt وتقارير Core Web Vitals المتاحة…";
+  try {
+    const response = await send({ type: "GSC_RUN_FULL_AUDIT", websiteUrl: siteUrl });
+    if (!response?.success || !response.audit) throw new Error(response?.error || "تعذر إكمال الفحص التلقائي.");
+    const audit = response.audit;
+    lastAuditedSiteUrl = audit.siteUrl || siteUrl;
+    if (response.context?.label) document.getElementById("sitePropertyLabel").textContent = response.context.label;
+    renderCoverageReport(audit.pages || {});
+    renderSitemapReport(audit.sitemaps || {});
+    const cwvSkipped = /غير ظاهرة لهذا الـ Property/.test(audit.cwvMobile?.availability || "");
+    document.getElementById("cwvToolsCard").hidden = cwvSkipped;
+    renderFullAuditSummary(audit);
+    setSiteToolsStatus("اكتمل الفحص التلقائي. راجع النتائج والتوصيات؛ قد تتطلب بعض الإصلاحات تعديل الموقع نفسه.", "success");
+    showToast("اكتمل فحص الموقع");
+  } catch (error) {
+    summary.className = "full-audit-summary error";
+    summary.textContent = error instanceof Error ? error.message : String(error);
+    setSiteToolsStatus(summary.textContent, "error");
+  } finally {
+    setSiteToolsBusy(false);
+  }
+}
 async function runGscTool(type, payload = {}) {
   if (siteToolsBusy) return;
   setSiteToolsBusy(true);
   setSiteToolsStatus("جارٍ الاتصال بـ Google Search Console…");
   try {
-    const response = await send({ type, ...payload });
+    const activeSite = document.getElementById("siteAuditUrl")?.value?.trim() || lastAuditedSiteUrl;
+    const response = await send({ type, ...(activeSite ? { websiteUrl: activeSite } : {}), ...payload });
     if (!response?.success) throw new Error(response?.error || "تعذر تنفيذ الإجراء.");
     if (response.context?.label) document.getElementById("sitePropertyLabel").textContent = response.context.label;
     if (type === "GSC_SCAN_REPORT") {
@@ -1276,17 +1364,15 @@ function bindEvents() {
   document.getElementById("openPagesReport").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "pages" }));
   document.getElementById("scanCoverageReport").addEventListener("click", () => void runGscTool("GSC_SCAN_REPORT"));
   document.getElementById("exportCoverageReport").addEventListener("click", exportCoverageCsv);
-  document.getElementById("startValidationButton").addEventListener("click", () => void runGscTool("GSC_START_VALIDATION"));
+  document.getElementById("startValidationButton").addEventListener("click", () => void runGscTool("GSC_START_VALIDATION", { websiteUrl: lastAuditedSiteUrl || document.getElementById("siteAuditUrl").value.trim() }));
   document.getElementById("openSitemapsReport").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "sitemaps" }));
   document.getElementById("scanSitemapsReport").addEventListener("click", () => void runGscTool("GSC_SCAN_SITEMAPS"));
-  document.getElementById("submitGscSitemap").addEventListener("click", () => {
-    const input = document.getElementById("gscSitemapUrl");
-    if (!input.value.trim() || !input.checkValidity()) {
-      setSiteToolsStatus("أدخل رابط Sitemap كاملًا يبدأ بـ http:// أو https://.", "error");
-      input.focus();
-      return;
+  document.getElementById("runSiteAudit").addEventListener("click", () => void startFullSiteAudit());
+  document.getElementById("siteAuditUrl").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void startFullSiteAudit();
     }
-    void runGscTool("GSC_SUBMIT_SITEMAP", { sitemapUrl: input.value.trim() });
   });
   document.getElementById("openRobotsReport").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "settings" }));
   document.getElementById("requestRobotsRecrawl").addEventListener("click", () => void runGscTool("GSC_REQUEST_ROBOTS_RECRAWL"));

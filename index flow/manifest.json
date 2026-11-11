@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "IndexFlow",
-  "version": "1.14.0",
-  "description": "IndexFlow — فهرسة جماعية، تقارير تغطية الصفحات، وإجراءات Sitemap وrobots.txt داخل Google Search Console.",
+  "version": "1.15.0",
+  "description": "IndexFlow — أدخل رابط موقعك لفحص GSC وSitemaps وrobots.txt وتقارير Core Web Vitals تلقائيًا.",
   "permissions": [
     "sidePanel",
     "storage",
