@@ -56,6 +56,44 @@ test('common sitemap locations are checked when robots.txt does not declare one'
   assert.equal(result.sitemaps[0].url, 'https://example.com/sitemap_index.xml');
 });
 
+test('all valid same-site sitemap declarations are returned and robots blocking is flagged', async () => {
+  const sitemapUrls = ['https://example.com/products.xml', 'https://example.com/articles.xml'];
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/robots.txt')) return fakeResponse(url, 200, 'User-agent: *\nDisallow: /\nSitemap: https://example.com/products.xml\nSitemap: https://example.com/articles.xml');
+    if (sitemapUrls.includes(url)) return fakeResponse(url, 200, '<urlset></urlset>');
+    return fakeResponse(url, 404, '');
+  };
+  const result = await discoverSiteSitemaps('https://example.com', { fetchImpl, timeoutMs: 50 });
+  assert.deepEqual(result.sitemaps.map((item) => item.url), sitemapUrls);
+  assert.equal(result.sitemapCount, 2);
+  assert.equal(result.blockedRoot, true);
+  assert.equal(result.robotsDirectives.length, 3);
+});
+
+test('robots directives are scoped to their user-agent groups', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/robots.txt')) return fakeResponse(url, 200, 'User-agent: BadBot\nDisallow: /\nUser-agent: *\nDisallow: /private');
+    return fakeResponse(url, 404, '');
+  };
+  const result = await discoverSiteSitemaps('https://example.com', { fetchImpl, timeoutMs: 50 });
+  assert.equal(result.blockedRoot, false);
+  const rootRule = result.robotsDirectives.find((item) => item.type === 'disallow' && item.value === '/');
+  assert.deepEqual(rootRule.agents, ['badbot']);
+});
+
+test('invalid declared sitemap falls back to conventional sitemap locations', async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/robots.txt')) return fakeResponse(url, 200, 'Sitemap: https://example.com/old-map.xml');
+    if (url.endsWith('/old-map.xml')) return fakeResponse(url, 404, '');
+    if (url.endsWith('/sitemap.xml')) return fakeResponse(url, 200, '<urlset></urlset>');
+    return fakeResponse(url, 404, '');
+  };
+  const result = await discoverSiteSitemaps('https://example.com', { fetchImpl, timeoutMs: 50 });
+  assert.equal(result.triedCommonPaths, true);
+  assert.equal(result.sitemapCount, 1);
+  assert.equal(result.sitemaps[0].url, 'https://example.com/sitemap.xml');
+});
+
 test('cross-site sitemap declarations are ignored', async () => {
   const fetchImpl = async (url) => {
     if (url.endsWith('/robots.txt')) return fakeResponse(url, 200, 'Sitemap: https://other.example.net/sitemap.xml');

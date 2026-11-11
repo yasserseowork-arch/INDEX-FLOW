@@ -1191,6 +1191,7 @@ function renderCoverageReport(report) {
   const summaryParts = [];
   if (report?.title) summaryParts.push(report.title);
   if (report?.notStartedCount) summaryParts.push(`Not Started: ${report.notStartedCount}`);
+  if (report?.failedCount) summaryParts.push(`Failed: ${report.failedCount}`);
   if (report?.rowCount) summaryParts.push(`صفوف مقروءة: ${report.rowCount}`);
   if (report?.availability) summaryParts.push(report.availability);
   setSiteToolsStatus(summaryParts.join(" · ") || "لم أجد صفوف تقرير ظاهرة. افتح تقرير الصفحات أو تفاصيل مشكلة داخل Search Console ثم أعد الفحص.", report?.notStartedCount ? "warning" : "info");
@@ -1271,22 +1272,30 @@ function renderFullAuditSummary(audit) {
     root.append(line);
   };
   const pages = audit.pages || {};
-  addLine("تغطية الصفحات", `${pages.notStartedCount || 0} حالة Not Started · ${pages.rowCount || 0} صف ظاهر`, pages.notStartedCount ? "warning" : "success");
+  addLine("تغطية الصفحات", `${pages.notStartedCount || 0} Not Started · ${pages.failedCount || 0} Failed · ${pages.rowCount || 0} صف ظاهر`, pages.notStartedCount || pages.failedCount ? "warning" : "success");
   const sitemapAction = audit.sitemapAction || {};
   const discovered = audit.sitemapDiscovery?.sitemaps || [];
-  addLine("Sitemap", sitemapAction.message || (discovered.length ? `تم اكتشاف ${discovered.length} خريطة.` : "لم يتم العثور على Sitemap قابلة للقراءة."), sitemapAction.submitted ? "success" : "");
+  const sitemapActions = audit.sitemapActions || [];
+  const sitemapDetail = sitemapActions.length
+    ? sitemapActions.map((item) => `${item.sitemapUrl}: ${item.message || item.status || "تم الفحص"}`).join(" · ")
+    : sitemapAction.message || (discovered.length ? `تم اكتشاف ${discovered.length} خريطة.` : "لم يتم العثور على Sitemap قابلة للقراءة.");
+  addLine("Sitemap", sitemapDetail, sitemapAction.submitted ? "success" : "");
   const robots = audit.sitemapDiscovery || {};
-  const robotDetail = `robots.txt: HTTP ${robots.robotsStatus ?? "غير متاح"}. ${audit.robotsRecrawl?.message || "لم يظهر خيار إعادة الزحف."}`;
-  addLine("robots.txt", robotDetail, audit.robotsRecrawl?.requested ? "success" : "");
+  const robotRules = (robots.robotsDirectives || []).filter((item) => item.type === "allow" || item.type === "disallow").slice(0, 10).map((item) => `${(item.agents || []).join(",") || "*"} ${item.type}: ${item.value}`).join("؛ ");
+  const robotsRuleSummary = robots.blockedRoot ? "تحذير: توجد قاعدة Disallow: / تنطبق على Googlebot أو الجميع." : `تم فحص ${robots.robotsDirectives?.length || 0} توجيهًا.`;
+  const robotDetail = `robots.txt: HTTP ${robots.robotsStatus ?? "غير متاح"}. ${robotsRuleSummary}${robotRules ? ` القواعد: ${robotRules}` : ""} ${audit.robotsRecrawl?.message || "لم يظهر خيار إعادة الزحف."}`;
+  addLine("robots.txt", robotDetail, robots.blockedRoot ? "warning" : audit.robotsRecrawl?.requested ? "success" : "");
   for (const [label, report] of [["Core Web Vitals — الجوال", audit.cwvMobile], ["Core Web Vitals — سطح المكتب", audit.cwvDesktop]]) {
     if (!report) continue;
-    const detail = report.availability || (report.cwvNoData ? "لا توجد بيانات كافية لهذا التقرير." : report.rowCount ? `${report.rowCount} صف/مشكلة ظاهرة في التقرير.` : "التقرير اختياري ولم تظهر بيانات مشكلة.");
+    const issueNames = (report.rows || []).map((row) => row.reason || row.text).filter(Boolean).slice(0, 4).join("؛ ");
+    const detail = report.availability || (report.cwvNoData ? "لا توجد بيانات كافية لهذا التقرير." : report.rowCount ? `${report.rowCount} صف/مشكلة ظاهرة: ${issueNames}` : "التقرير اختياري ولم تظهر بيانات مشكلة.");
     addLine(label, detail, report.availability || report.cwvNoData ? "muted" : "");
   }
   const note = document.createElement("small");
   note.className = "full-audit-note";
   note.textContent = "الإضافة نفّذت إجراءات Search Console المتاحة فقط. راجع توصيات الصفحات أدناه؛ التعديلات التقنية على الموقع تتطلب وصولًا للموقع أو الخادم.";
   root.append(note);
+  for (const failure of audit.stageErrors || []) addLine(`تعذر فحص: ${failure.stage}`, failure.message, "warning");
 }
 async function startFullSiteAudit() {
   if (siteToolsBusy) return;
@@ -1311,7 +1320,9 @@ async function startFullSiteAudit() {
   summary.textContent = "جارٍ قراءة الصفحات وSitemaps وrobots.txt وتقارير Core Web Vitals المتاحة…";
   try {
     const response = await send({ type: "GSC_RUN_FULL_AUDIT", websiteUrl: siteUrl });
-    if (!response?.success || !response.audit) throw new Error(response?.error || "تعذر إكمال الفحص التلقائي.");
+    if (!response) throw new Error("لم تصل استجابة الفحص من خدمة الإضافة. افتح chrome://extensions واضغط إعادة تحميل IndexFlow، ثم أعد المحاولة.");
+    if (!response.success) throw new Error(response.error || "رفضت خدمة الإضافة تشغيل الفحص. أعد تحميل الإضافة وحاول مرة أخرى.");
+    if (!response.audit) throw new Error("انتهى الفحص دون تقرير نتائج. أعد تحميل الإضافة؛ وإذا تكرر الخطأ أرسل لقطة من خطأ Service worker.");
     const audit = response.audit;
     lastAuditedSiteUrl = audit.siteUrl || siteUrl;
     if (response.context?.label) document.getElementById("sitePropertyLabel").textContent = response.context.label;

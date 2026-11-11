@@ -5518,16 +5518,33 @@ function buildGscToolUrl(context, page) {
   const params = new URLSearchParams({ resource_id: context.resourceId });
   return `https://search.google.com${prefix}/search-console/${page}?${params.toString()}`;
 }
+async function waitForGscToolPage(tabId, context, page, timeoutMs = 45e3) {
+  const deadline = Date.now() + timeoutMs;
+  let lastUrl = "";
+  while (Date.now() < deadline) {
+    const tab = await chrome.tabs.get(tabId);
+    lastUrl = tab.url || lastUrl;
+    let matches = false;
+    try {
+      const url = new URL(tab.url || "");
+      const suffix = `/search-console/${page}`;
+      matches = url.hostname === "search.google.com" && url.pathname.replace(/\/$/, "").endsWith(suffix) && url.searchParams.get("resource_id") === context.resourceId;
+    } catch { }
+    if (matches && tab.status === "complete") return tab;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`لم تفتح صفحة ${page} للموقع المطلوب في Search Console خلال المهلة. آخر رابط: ${lastUrl || "غير معروف"}`);
+}
 async function openGscToolTab(context, page, active = true) {
   const tab = await chrome.tabs.create({ url: buildGscToolUrl(context, page), active });
   if (tab.id === undefined) throw new Error("تعذر فتح صفحة Google Search Console.");
-  await waitForTabReady(tab.id, 45e3);
-  await ensureContentScript(tab.id);
-  return tab;
+  const loaded = await waitForGscToolPage(tab.id, context, page, 30e3);
+  await ensureContentScript(loaded.id);
+  return loaded;
 }
 async function navigateGscToolTab(tabId, context, page) {
   await chrome.tabs.update(tabId, { url: buildGscToolUrl(context, page), active: false });
-  await waitForTabReady(tabId, 3e4);
+  await waitForGscToolPage(tabId, context, page, 20e3);
   await ensureContentScript(tabId);
 }
 async function readReportOnPage(tabId, context, page) {
@@ -5535,56 +5552,100 @@ async function readReportOnPage(tabId, context, page) {
   return sendGscToolAction(tabId, "GSC_READ_REPORT");
 }
 async function runFullGscAudit(websiteUrl) {
-  const normalizedSiteUrl = normalizeWebsiteUrl(websiteUrl);
-  const context = await getGscToolContext(normalizedSiteUrl);
-  const firstTab = await openGscToolTab(context, GSC_TOOL_PAGES.pages, false);
-  const audit = { siteUrl: normalizedSiteUrl, pages: {}, sitemaps: {}, sitemapDiscovery: {}, sitemapAction: {}, robotsRecrawl: {}, cwvMobile: null, cwvDesktop: null };
-  try { audit.pages = await sendGscToolAction(firstTab.id, "GSC_READ_REPORT"); }
-  catch (error) { audit.pages = { rows: [], rowCount: 0, notStartedCount: 0, error: errorMessage(error) }; }
+  let normalizedSiteUrl;
+  try { normalizedSiteUrl = normalizeWebsiteUrl(websiteUrl); }
+  catch (error) { throw new Error(`رابط الموقع غير صالح: ${errorMessage(error)}`); }
+  let context;
+  try { context = await getGscToolContext(normalizedSiteUrl); }
+  catch (error) { throw new Error(`تعذر تحديد Property للموقع في Search Console: ${errorMessage(error)}`); }
+  let firstTab;
+  try { firstTab = await openGscToolTab(context, GSC_TOOL_PAGES.pages, false); }
+  catch (error) { throw new Error(`تم تحديد Property (${context.label}) لكن تعذر فتح تقرير الصفحات: ${errorMessage(error)}`); }
 
-  audit.sitemapDiscovery = await discoverSiteSitemaps(normalizedSiteUrl);
+  const audit = {
+    siteUrl: normalizedSiteUrl,
+    pages: {},
+    sitemaps: {},
+    sitemapDiscovery: {},
+    sitemapAction: {},
+    sitemapActions: [],
+    robotsRecrawl: {},
+    cwvMobile: null,
+    cwvDesktop: null,
+    stageErrors: []
+  };
+  const noteFailure = (stage, error) => audit.stageErrors.push({ stage, message: errorMessage(error) });
+  try { audit.pages = await sendGscToolAction(firstTab.id, "GSC_READ_REPORT"); }
+  catch (error) { audit.pages = { rows: [], rowCount: 0, notStartedCount: 0, error: errorMessage(error) }; noteFailure("تقرير الصفحات", error); }
+
+  try { audit.sitemapDiscovery = await discoverSiteSitemaps(normalizedSiteUrl); }
+  catch (error) {
+    audit.sitemapDiscovery = { robotsStatus: "تعذر الفحص", robotsDirectives: [], sitemaps: [], sitemapCount: 0 };
+    noteFailure("اكتشاف robots.txt وSitemap", error);
+  }
+
   try {
     await navigateGscToolTab(firstTab.id, context, GSC_TOOL_PAGES.sitemaps);
     audit.sitemaps = await sendGscToolAction(firstTab.id, "GSC_READ_SITEMAPS");
     const existing = new Set((audit.sitemaps.rows || []).map((row) => normalizeSitemapForCompare(row.sitemap, normalizedSiteUrl)).filter(Boolean));
-    const candidate = (audit.sitemapDiscovery.sitemaps || []).find((item) => !existing.has(normalizeSitemapForCompare(item.url, normalizedSiteUrl)));
-    if (candidate) {
-      audit.sitemapAction = await sendGscToolAction(firstTab.id, "GSC_SUBMIT_SITEMAP", { sitemapUrl: candidate.url, propertyId: context.resourceId });
-      audit.sitemapAction.sitemapUrl = candidate.url;
-    } else if (audit.sitemapDiscovery.sitemaps?.length) {
-      audit.sitemapAction = { available: true, submitted: false, status: "already_submitted", message: "الخرائط التي تم اكتشافها موجودة بالفعل في تقرير GSC؛ لم يتم إرسال نسخة مكررة." };
+    const candidates = (audit.sitemapDiscovery.sitemaps || []).filter((item) => !existing.has(normalizeSitemapForCompare(item.url, normalizedSiteUrl)));
+    for (const candidate of candidates) {
+      try {
+        const action = await sendGscToolAction(firstTab.id, "GSC_SUBMIT_SITEMAP", { sitemapUrl: candidate.url, propertyId: context.resourceId });
+        audit.sitemapActions.push({ ...action, sitemapUrl: candidate.url });
+        if (action.status === "submitted") existing.add(normalizeSitemapForCompare(candidate.url, normalizedSiteUrl));
+      } catch (error) {
+        audit.sitemapActions.push({ available: false, submitted: false, sitemapUrl: candidate.url, message: errorMessage(error) });
+      }
+    }
+    if (audit.sitemapActions.length) {
+      const submitted = audit.sitemapActions.filter((item) => item.submitted || item.status === "submitted").length;
+      audit.sitemapAction = {
+        available: audit.sitemapActions.some((item) => item.available !== false),
+        submitted: submitted > 0,
+        status: submitted ? "submitted" : "attempted",
+        message: `تم إرسال ${submitted} من ${audit.sitemapActions.length} Sitemap غير مسجلة. ${audit.sitemapActions.map((item) => `${item.sitemapUrl}: ${item.message || item.status || "تم الفحص"}`).join(" · ")}`
+      };
+    } else if ((audit.sitemapDiscovery.sitemaps || []).length) {
+      audit.sitemapAction = { available: true, submitted: false, status: "already_submitted", message: "كل خرائط Sitemap المكتشفة موجودة بالفعل في تقرير Search Console؛ لم يتم إرسال نسخ مكررة." };
     } else {
-      audit.sitemapAction = { available: false, submitted: false, status: "not_found", message: "لم تُكتشف Sitemap قابلة للقراءة؛ لم يتم إرسال رابط تخميني." };
+      audit.sitemapAction = { available: false, submitted: false, status: "not_found", message: "لم تُكتشف Sitemap قابلة للقراءة؛ راجع robots.txt أو أضف Sitemap من الاستضافة." };
     }
   } catch (error) {
     audit.sitemaps = { rows: [], rowCount: 0, error: errorMessage(error) };
     audit.sitemapAction = { available: false, submitted: false, message: errorMessage(error) };
+    noteFailure("تقرير Sitemaps", error);
   }
 
-  try {
-    await navigateGscToolTab(firstTab.id, context, GSC_TOOL_PAGES.settings);
-    audit.robotsRecrawl = await sendGscToolAction(firstTab.id, "GSC_REQUEST_ROBOTS_RECRAWL");
-  } catch (error) {
-    audit.robotsRecrawl = { available: false, requested: false, message: errorMessage(error) };
+  if (audit.sitemapDiscovery.blockedRoot) {
+    audit.robotsRecrawl = { available: false, requested: false, message: "لم أطلب إعادة الزحف لأن robots.txt يمنع الزحف إلى جذر الموقع. عدّل القاعدة من الاستضافة أولًا، ثم اطلب إعادة الزحف." };
+  } else {
+    try {
+      await navigateGscToolTab(firstTab.id, context, GSC_TOOL_PAGES.settings);
+      audit.robotsRecrawl = await sendGscToolAction(firstTab.id, "GSC_REQUEST_ROBOTS_RECRAWL");
+    } catch (error) {
+      audit.robotsRecrawl = { available: false, requested: false, message: errorMessage(error) };
+      noteFailure("طلب إعادة زحف robots.txt", error);
+    }
   }
   let cwvAvailable = true;
   try {
     const reportAvailability = await sendGscToolAction(firstTab.id, "GSC_GET_REPORT_AVAILABILITY");
     if (reportAvailability.inspectedNavigation && !reportAvailability.coreWebVitalsVisible) cwvAvailable = false;
-  } catch { }
+  } catch (error) { noteFailure("التحقق من تقارير Core Web Vitals", error); }
   if (!cwvAvailable) {
     audit.cwvMobile = { rows: [], rowCount: 0, availability: "تقارير Core Web Vitals غير ظاهرة لهذا الـ Property؛ تم تخطيها." };
     audit.cwvDesktop = { rows: [], rowCount: 0, availability: "تقارير Core Web Vitals غير ظاهرة لهذا الـ Property؛ تم تخطيها." };
   } else {
     try { audit.cwvMobile = await readReportOnPage(firstTab.id, context, GSC_TOOL_PAGES["cwv-mobile"]); }
-    catch (error) { audit.cwvMobile = { rows: [], rowCount: 0, availability: `تقرير الجوال غير متاح: ${errorMessage(error)}` }; }
+    catch (error) { audit.cwvMobile = { rows: [], rowCount: 0, availability: `تقرير الجوال غير متاح: ${errorMessage(error)}` }; noteFailure("Core Web Vitals للجوال", error); }
     try { audit.cwvDesktop = await readReportOnPage(firstTab.id, context, GSC_TOOL_PAGES["cwv-desktop"]); }
-    catch (error) { audit.cwvDesktop = { rows: [], rowCount: 0, availability: `تقرير سطح المكتب غير متاح: ${errorMessage(error)}` }; }
+    catch (error) { audit.cwvDesktop = { rows: [], rowCount: 0, availability: `تقرير سطح المكتب غير متاح: ${errorMessage(error)}` }; noteFailure("Core Web Vitals لسطح المكتب", error); }
   }
   try {
     await navigateGscToolTab(firstTab.id, context, GSC_TOOL_PAGES.pages);
     audit.pages = await sendGscToolAction(firstTab.id, "GSC_READ_REPORT");
-  } catch { }
+  } catch (error) { noteFailure("العودة إلى تقرير الصفحات", error); }
   return { context, audit };
 }
 
@@ -5595,7 +5656,10 @@ async function sendGscToolAction(tabId, action, payload = {}) {
   return response.data;
 }
 async function handleGscToolMessage(message) {
-  if (message.type === "GSC_RUN_FULL_AUDIT") return runFullGscAudit(message.websiteUrl);
+  if (message.type === "GSC_RUN_FULL_AUDIT") {
+    const result = await runFullGscAudit(message.websiteUrl);
+    return { success: true, context: result.context, audit: result.audit };
+  }
   const context = await getGscToolContext(message.websiteUrl || "");
   if (message.type === "GSC_GET_CONTEXT") {
     let availability;

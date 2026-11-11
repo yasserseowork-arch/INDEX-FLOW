@@ -1145,10 +1145,10 @@
     const title = document.querySelector('h1, [role="heading"][aria-level="1"]')?.innerText?.trim() || document.title || "Google Search Console";
     let notStartedCount = rows.filter((row) => row.validation === "not_started").length;
     if (!notStartedCount && validationState(body)?.key === "not_started") notStartedCount = 1;
-    const startAction = findVisibleAction([/^(start validation|start fixing|validate fix|ابدأ التحقق|بدء التحقق|التحقق من الإصلاح)$/i]);
+    const failedCount = Math.max(rows.filter((row) => row.validation === "failed").length, /\b(?:validation\s+)?failed\b|فشل\s*التحقق/.test(normalizedBody) ? 1 : 0);
     const pageIsCwv = /core-web-vitals/i.test(location.pathname);
     const availability = pageIsCwv && cwvNoData ? "التقرير الاختياري لا يحتوي بيانات كافية حاليًا." : "";
-    return { title: title.slice(0, 200), url: location.href, rows, rowCount: rows.length, notStartedCount, canStartValidation: Boolean(startAction && notStartedCount > 0), availability, cwvNoData };
+    return { title: title.slice(0, 200), url: location.href, rows, rowCount: rows.length, notStartedCount, failedCount, canStartValidation: notStartedCount > 0 || failedCount > 0, availability, cwvNoData };
   }
   function readGscSitemaps() {
     const candidates = new Set([...document.querySelectorAll('[role="row"]'), ...document.querySelectorAll("table tr")]);
@@ -1173,11 +1173,11 @@
   }
   async function startVisibleValidation() {
     const report = readGscReport();
-    if (!report.notStartedCount) return { started: false, message: "لم أجد حالة Not Started ظاهرة في الصفحة الحالية. افتح تفاصيل المشكلة ثم أعد المحاولة." };
-    const action = findVisibleAction([/^(start validation|start fixing|validate fix|ابدأ التحقق|بدء التحقق|التحقق من الإصلاح)$/i]);
-    if (!action) return { started: false, message: "حالة Not Started موجودة، لكن زر بدء التحقق غير ظاهر في هذه الصفحة. افتح تفاصيل المشكلة في Search Console؛ قد يلزم إصلاح الموقع أولًا." };
+    if (!report.notStartedCount && !report.failedCount) return { started: false, message: "لا تظهر حالة Not Started أو Failed للمشكلة الحالية. لن أطلب التحقق قبل وجود حالة تسمح بذلك." };
+    const action = findVisibleAction([/^(start validation|start new validation|start fixing|validate fix|ابدأ التحقق|بدء التحقق|بدء تحقق جديد|التحقق من الإصلاح)$/i]);
+    if (!action) return { started: false, message: "حالة المشكلة ظهرت، لكن زر Start new validation أو Validate fix غير ظاهر. افتح تفاصيل المشكلة بعد إصلاحها؛ Google لا يعرض الإجراء دائمًا." };
     action.click();
-    return { started: true, message: "تم الضغط على بدء التحقق في Search Console. راجع الصفحة للتأكد من قبول الطلب." };
+    return { started: true, message: "تم اختيار إجراء التحقق الظاهر من Google. راجع Search Console للتأكد من قبول الطلب." };
   }
   async function submitVisibleSitemap(sitemapUrl, propertyId) {
     let target;

@@ -106,12 +106,20 @@ test('coverage scan extracts Not Started issue rows and makes validation availab
   assert.equal(action.clicked, true);
 });
 
-test('validation action is not clicked if Not Started is absent', async () => {
+test('validation action is not clicked if the issue is already passed', async () => {
   const action = new FakeHTMLElement('Start validation');
   const harness = createGscHarness({ bodyText: 'Issue validation Passed', actions: [action] });
   const result = await harness.send({ type: 'GSC_START_VALIDATION' });
   assert.equal(result.data.started, false);
   assert.equal(action.clicked, false);
+});
+
+test('validation can be restarted for a failed issue when Google exposes Start new validation', async () => {
+  const action = new FakeHTMLElement('START NEW VALIDATION');
+  const harness = createGscHarness({ bodyText: 'Validation failed Started: Oct 27, 2026', actions: [action] });
+  const result = await harness.send({ type: 'GSC_START_VALIDATION' });
+  assert.equal(result.data.started, true);
+  assert.equal(action.clicked, true);
 });
 
 test('sitemap report parser returns sitemap URL, Google status, and discovered page count', async () => {
