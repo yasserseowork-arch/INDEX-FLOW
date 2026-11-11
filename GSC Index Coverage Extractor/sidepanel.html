@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GSC Index Extractor</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>GSC Index <em>Extractor</em></h1>
+      <div class="subtitle">Download Index Coverage & Sitemap Reports</div>
+      <span class="version">v1.2.0</span>
+    </header>
+
+    <!-- Status Bar -->
+    <div id="statusBar" class="status-bar status-disconnected">
+      <span class="status-dot"></span>
+      <span id="statusText">Not on a GSC page</span>
+    </div>
+
+    <!-- Previous Results Accordion -->
+    <details id="previousResults" class="previous-results" style="display:none">
+      <summary class="previous-results-toggle">Previous results</summary>
+      <div class="previous-results-body">
+        <div id="previousResultsList" class="previous-results-list"></div>
+      </div>
+    </details>
+
+    <!-- Properties Section -->
+    <section id="propertiesSection" class="section" style="display:none">
+      <div class="section-header">
+        <h2>Properties</h2>
+        <button id="refreshBtn" class="btn-icon" title="Refresh properties">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg>
+        </button>
+      </div>
+      <input type="text" id="propertySearch" class="search-input" placeholder="Search properties...">
+      <div id="propertyList" class="property-list"></div>
+      <div class="property-actions">
+        <button id="selectAllBtn" class="btn-text">Select All</button>
+        <button id="deselectAllBtn" class="btn-text">Deselect All</button>
+        <span id="selectedCount" class="badge">0 selected</span>
+      </div>
+    </section>
+
+    <!-- Options Section -->
+    <section id="optionsSection" class="section" style="display:none">
+      <h2>Options</h2>
+      <div class="option-row">
+        <label class="toggle">
+          <input type="checkbox" id="extractCoverage" checked>
+          <span class="toggle-slider"></span>
+          <span>Index Coverage <span class="info-icon">i<span class="info-tip">Extract URLs from each index coverage category (indexed, excluded, not indexed, etc.)</span></span></span>
+        </label>
+      </div>
+      <div class="option-row">
+        <label class="toggle">
+          <input type="checkbox" id="extractSitemaps" checked>
+          <span class="toggle-slider"></span>
+          <span>Sitemap Coverage <span class="info-icon">i<span class="info-tip">Extract sitemap list and URLs covered by each sitemap</span></span></span>
+        </label>
+      </div>
+      <div class="option-row">
+        <label class="toggle">
+          <input type="checkbox" id="extractHistory" checked>
+          <span class="toggle-slider"></span>
+          <span>Historic Data <span class="info-icon">i<span class="info-tip">Capture daily page count history from GSC charts for each report</span></span></span>
+        </label>
+      </div>
+      <div class="option-row">
+        <label>
+          <span>Delay between pages: <span class="info-icon">i<span class="info-tip">Wait time between page navigations to avoid rate limiting</span></span></span>
+          <select id="delaySelect">
+            <option value="1">1 second</option>
+            <option value="2">2 seconds</option>
+            <option value="3" selected>3 seconds</option>
+            <option value="5">5 seconds</option>
+            <option value="10">10 seconds</option>
+          </select>
+        </label>
+      </div>
+      <div class="option-row">
+        <label>
+          <span>Date format: <span class="info-icon">i<span class="info-tip">Format for dates in exported files</span></span></span>
+          <select id="dateFormatSelect">
+            <option value="DD/MM/YYYY" selected>DD/MM/YYYY</option>
+            <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+            <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <!-- Controls -->
+    <section id="controlsSection" class="section" style="display:none">
+      <button id="startBtn" class="btn btn-primary" title="Begin extracting data from selected properties">Start Extraction</button>
+      <button id="stopBtn" class="btn btn-danger" style="display:none" title="Stop extraction after current page finishes">Stop</button>
+    </section>
+
+    <!-- Progress Section -->
+    <section id="progressSection" class="section" style="display:none">
+      <h2>Progress</h2>
+      <div class="progress-info">
+        <span id="progressProperty">—</span>
+        <span id="progressReport" class="progress-detail">—</span>
+      </div>
+      <div class="progress-bar-container">
+        <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="progress-stats">
+        <span id="progressPercent">0%</span>
+        <span id="progressUrls">0 URLs extracted</span>
+      </div>
+    </section>
+
+    <!-- Export Section -->
+    <section id="exportSection" class="section" style="display:none">
+      <h2>Export</h2>
+      <div class="export-buttons">
+        <button id="exportExcelBtn" class="btn btn-export" title="Download .xlsx with separate sheets per property and data type">Download Excel</button>
+        <button id="exportCsvBtn" class="btn btn-export" title="Download separate .csv files for coverage and sitemaps">Download CSV</button>
+      </div>
+      <div id="exportInfo" class="export-info"></div>
+      <button id="restartBtn" class="btn btn-restart" title="Reset and start a new extraction (previous results stay available)">New Extraction</button>
+    </section>
+
+    <!-- Log Section -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Log</h2>
+        <button id="clearLogBtn" class="btn-text">Clear</button>
+      </div>
+      <div id="logContainer" class="log-container">
+        <div class="log-entry log-info">Extension loaded. Navigate to Google Search Console to begin.</div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="footer">
+    Produced and Directed by <a href="https://jlhernando.com/?utm_source=gsc_index_extension&utm_medium=sidepanel&utm_campaign=gsc_index_usage" target="_blank" rel="noopener">Jose Luis Hernando</a>
+  </footer>
+
+  <script src="lib/exceljs.min.js"></script>
+  <script src="utils.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

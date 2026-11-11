@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title data-i18n="appTitle">الفهرسة الجماعية لروابط جوجل — IndexFlow</title>
+  <link rel="stylesheet" href="side-panel.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <img id="brandAvatar" class="brand-avatar" src="avatar.jpg" alt="Muhammed Yasser">
+        <div class="brand-copy">
+          <span class="eyebrow" data-i18n="brandEyebrow">IndexFlow · أدوات GSC</span>
+          <h1 data-i18n="appHeading">الفهرسة المجمّعة</h1>
+          <span class="brand-credit" dir="ltr">Muhammed Yasser</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <button id="aboutButton" class="icon-button" type="button" aria-label="عن الإضافة" title="عن الإضافة">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8.5v.5"/></svg>
+        </button>
+        <div id="headerPill" class="run-pill" data-status="idle" aria-live="polite">
+          <span class="run-dot" aria-hidden="true"></span>
+          <span id="headerStatusText" data-i18n="statusIdle">خامل</span>
+        </div>
+        <span id="headerQueueCount" class="count-badge" hidden></span>
+      </div>
+    </header>
+
+    <main>
+      <nav id="wizardProgress" class="wizard-progress" aria-label="مراحل الإعداد">
+        <button class="wizard-step" type="button" data-step="1" aria-current="step"><span>1</span><strong data-i18n="wizardSource">الرابط</strong></button>
+        <span class="wizard-line" aria-hidden="true"></span>
+        <button class="wizard-step" type="button" data-step="2"><span>2</span><strong data-i18n="wizardRules">التحميل</strong></button>
+        <span class="wizard-line" aria-hidden="true"></span>
+        <button class="wizard-step" type="button" data-step="3"><span>3</span><strong data-i18n="wizardRun">الإعدادات</strong></button>
+        <span class="wizard-line" aria-hidden="true"></span>
+        <button class="wizard-step" type="button" data-step="4"><span>4</span><strong data-i18n="wizardIndexing">الفهرسة</strong></button>
+      </nav>
+
+      <section class="hero-card" aria-labelledby="sitemapTitle" data-wizard-step="1">
+        <div class="section-heading">
+          <div>
+            <span class="step-label" data-i18n="sourceStep">01 · الرابط</span>
+            <h2 id="sitemapTitle" data-i18n="loadTitle">أضف رابط السايت ماب</h2>
+            <p data-i18n="sourceIntro">ارفع ملف روابط أو الصق الروابط مباشرة، أو استخدم ملف Sitemap.</p>
+          </div>
+          <span class="source-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 5h7v4H4V5Zm9 0h7v4h-7V5ZM4 15h7v4H4v-4Zm9 0h7v4h-7v-4ZM7.5 9v3h9V9M12 12v3"/></svg>
+          </span>
+        </div>
+        <form id="sitemapForm" class="sitemap-form">
+          <label for="sitemapUrl" data-i18n="sitemapLabel">رابط خريطة الموقع</label>
+          <div class="input-action-row">
+            <div class="url-input-wrap">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
+              <input id="sitemapUrl" name="sitemapUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://example.com/sitemap.xml" data-i18n-placeholder="sitemapPlaceholder" required>
+            </div>
+          </div>
+          <button id="loadSitemapButton" class="button button-primary load-source-button" type="submit"><span data-i18n="loadSitemapButton">تحميل Sitemap</span></button>
+          <div class="direct-links-box"><label for="directUrls" class="direct-urls-label" data-i18n="directUrlsLabel">روابط مباشرة</label><textarea id="directUrls" rows="5" placeholder="https://example.com/page-1&#10;https://example.com/page-2" data-i18n-placeholder="directUrlsPlaceholder"></textarea><div class="direct-actions"><button id="loadDirectUrls" class="button button-primary" type="button" data-i18n="loadDirectUrlsButton">تحميل الروابط</button><label class="button button-secondary file-label" for="directFile"><input id="directFile" type="file" accept=".txt,.csv,.json"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0 4 4m-4-4-4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span class="file-label-text" data-i18n="uploadFileButton">رفع ملف</span><span id="directFileName" class="file-name" hidden></span></label></div><small data-i18n="directUrlsHint">TXT أو CSV أو JSON — رابط واحد في كل سطر.</small></div>
+          <p class="field-hint" data-i18n="sitemapHint">يدعم XML وفهارس الخرائط وملفات gzip.</p>
+          <p id="formError" class="form-error" role="alert"></p>
+        </form>
+
+      </section>
+
+      <section id="conversionCard" class="card conversion-card" aria-labelledby="conversionTitle" data-wizard-step="2" hidden>
+        <div id="conversionIcon" class="conversion-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        </div>
+        <span class="step-label" data-i18n="loadStep">02 · التحميل</span>
+        <h2 id="conversionTitle" data-i18n="conversionLoadingTitle">جارٍ قراءة السايت ماب</h2>
+        <p id="conversionBody" data-i18n="conversionLoadingBody">جارٍ جمع الروابط وحذف المكرر...</p>
+        <button id="retryConversionButton" class="button button-primary" type="button" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5"/></svg>
+          <span data-i18n="retry">إعادة المحاولة</span>
+        </button>
+        <div id="discoverySummary" class="discovery-summary" hidden>
+          <div class="summary-header">
+            <div class="summary-success-icon" aria-hidden="true">✓</div>
+            <div>
+              <strong id="discoveryHeadline" data-i18n="sitemapReady">خريطة الموقع جاهزة</strong>
+              <span id="discoveryMeta" data-i18n="documentsScanned">مستندات خريطة الموقع المفحوصة</span>
+            </div>
+          </div>
+          <div class="metric-chips" id="discoveryMetrics"></div>
+          <p id="discoveryWarning" class="summary-warning" hidden></p>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="settingsTitle" data-wizard-step="3" hidden>
+        <div class="section-heading compact">
+          <div>
+            <span class="step-label" data-i18n="rulesStep">03 · الإعدادات</span>
+            <h2 id="settingsTitle" data-i18n="rulesTitle">اختر الصفحات</h2>
+          </div>
+        </div>
+
+        <fieldset id="indexModeFieldset" class="mode-fieldset">
+          <legend data-i18n="indexModeLegend">وضع الفهرسة</legend>
+          <div class="mode-grid">
+            <label class="mode-option">
+              <input type="radio" name="indexMode" value="new_only">
+              <span class="mode-content">
+                <span class="mode-icon new" aria-hidden="true">＋</span>
+                <span><strong data-i18n="newTitle">الجديدة فقط</strong><small data-i18n="newDescription">أرسل الصفحات غير المفهرسة في Google.</small></span>
+                <span class="radio-mark" aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="indexMode" value="reindex_only">
+              <span class="mode-content">
+                <span class="mode-icon reindex" aria-hidden="true">↻</span>
+                <span><strong data-i18n="reindexTitle">إعادة الفهرسة</strong><small data-i18n="reindexDescription">حدّث الصفحات الموجودة على Google.</small></span>
+                <span class="radio-mark" aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="indexMode" value="both">
+              <span class="mode-content">
+                <span class="mode-icon both" aria-hidden="true">◆</span>
+                <span><strong data-i18n="bothTitle">كلاهما</strong><small data-i18n="bothDescription">أرسل الصفحات الجديدة والمفهرسة.</small></span>
+                <span class="radio-mark" aria-hidden="true"></span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="delay-settings" aria-label="Wait settings">
+          <div class="delay-row">
+            <div>
+              <label for="indexDelaySeconds" data-i18n="indexDelayLabel">الانتظار بين عمليات الفهرسة (ثوانٍ)</label>
+              <p data-i18n="indexDelayHint">مدة الانتظار قبل معالجة الرابط التالي.</p>
+            </div>
+            <div class="number-field">
+              <input id="indexDelaySeconds" type="number" min="10" max="3600" step="5" inputmode="numeric">
+              <span data-i18n="seconds">ثانية</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="automation-note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <div>
+            <strong data-i18n="timingTitle">مواعيد التشغيل التلقائي</strong>
+            <ul>
+              <li data-i18n="customIndexDelayNote">العمليات الناجحة والفاشلة تستخدم مدة انتظار الفهرسة التي حددتها.</li>
+              <li data-i18n="skipDelayNote">عند تخطي الرابط: انتظار 10 ثوانٍ فقط قبل الرابط التالي.</li>
+              <li data-i18n="customLimitDelayNote">عند تجاوز الحد / الحصة يتوقف الطابور تمامًا، وتظل الروابط محجوزة حتى تتجدد الحصة اليومية.</li>
+              <li data-i18n="successReturnNote">بعد نجاح الطلب: الرجوع إلى صفحة Search Console الرئيسية قبل الرابط التالي.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="control-card" aria-labelledby="runTitle" data-wizard-step="4" hidden>
+        <div class="run-copy">
+          <div class="run-heading-row">
+            <span class="step-label light" data-i18n="runStep">04 · الفهرسة</span>
+            <div class="run-pill" id="runPill" data-status="idle" aria-live="polite">
+              <span class="run-dot" aria-hidden="true"></span>
+              <span id="runStatusText" data-i18n="statusIdle">خامل</span>
+            </div>
+            <span id="runElapsed" class="count-badge elapsed-badge" hidden></span>
+          </div>
+          <h2 id="runTitle" data-i18n="runTitle">جاهز</h2>
+          <p id="runHelper" data-i18n="runLoadHint">حمّل خريطة موقع لإنشاء الطابور.</p>
+        </div>
+        <div class="control-actions">
+          <button id="startButton" class="button button-success" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z"/></svg>
+            <span data-i18n="startQueue">بدء الطابور</span>
+          </button>
+          <button id="stopButton" class="button button-danger" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z"/></svg>
+            <span data-i18n="stop">إيقاف</span>
+          </button>
+          <button id="resetButton" class="button button-dark-ghost" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5"/></svg>
+            <span data-i18n="reset">إعادة ضبط</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="dashboard" aria-labelledby="progressTitle" data-wizard-step="4" hidden>
+        <div id="waitProgress" class="wait-progress" data-reason="pacing" hidden>
+          <div class="wait-progress-head">
+            <span id="waitReason">انتظار قبل الرابط التالي</span>
+            <strong id="waitCountdown">01:00</strong>
+          </div>
+          <div id="waitProgressBar" class="wait-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <span id="waitProgressFill"></span>
+          </div>
+          <small id="waitNextAt">العملية التالية في --:--</small>
+        </div>
+        <div class="dashboard-heading">
+          <div>
+            <span class="step-label" data-i18n="liveOverview">نظرة مباشرة</span>
+            <h2 id="progressTitle" data-i18n="queueProgress">تقدم الطابور</h2>
+          </div>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+          <article class="stat-card pending" data-filter="pending" tabindex="0" role="button" title="تصفية الطابور: قيد الانتظار"><span class="stat-icon">○</span><strong id="pendingCount">0</strong><span data-i18n="pending">قيد الانتظار</span></article>
+          <article class="stat-card processing" data-filter="processing" tabindex="0" role="button" title="تصفية الطابور: قيد المعالجة"><span class="stat-icon">◌</span><strong id="processingCount">0</strong><span data-i18n="processing">قيد المعالجة</span></article>
+          <article class="stat-card requested" data-filter="request_sent" tabindex="0" role="button" title="تصفية الطابور: تم الطلب"><span class="stat-icon">✓</span><strong id="requestedCount">0</strong><span data-i18n="requested">تم الطلب</span></article>
+          <article class="stat-card skipped" data-filter="skipped_mode" tabindex="0" role="button" title="تصفية الطابور: تم التخطي"><span class="stat-icon">↷</span><strong id="skippedCount">0</strong><span data-i18n="skipped">تم التخطي</span></article>
+          <article class="stat-card errors" data-filter="error" tabindex="0" role="button" title="تصفية الطابور: الأخطاء"><span class="stat-icon">!</span><strong id="errorCount">0</strong><span data-i18n="errors">الأخطاء</span></article>
+        </div>
+
+        <div class="progress-panel">
+          <div class="progress-copy"><span id="progressLabel" data-i18n="noUrlsLoaded">لم يتم تحميل روابط</span><strong id="progressPercent">0%</strong></div>
+          <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar">
+            <span id="progressFill"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card queue-card" aria-labelledby="queueTitle" data-wizard-step="4" hidden>
+        <div class="queue-heading">
+          <div>
+            <span class="step-label" data-i18n="urlDetails">تفاصيل الروابط</span>
+            <h2 id="queueTitle" data-i18n="queue">الطابور</h2>
+          </div>
+          <span class="count-badge" id="queueTotalBadge">0 رابط</span>
+          <div class="mini-actions">
+            <button id="exportCsvButton" class="icon-button" type="button" aria-label="تصدير CSV" title="تصدير CSV">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="queue-tools">
+          <label class="search-field">
+            <span class="sr-only" data-i18n="searchQueue">البحث في الطابور</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+            <input id="queueSearch" type="search" placeholder="البحث عن رابط" data-i18n-placeholder="searchPlaceholder">
+          </label>
+          <label class="filter-field">
+            <span class="sr-only" data-i18n="filterStatus">تصفية حسب الحالة</span>
+            <select id="queueFilter">
+              <option value="all" data-i18n="allStatuses">كل الحالات</option>
+              <option value="pending" data-i18n="pending">قيد الانتظار</option>
+              <option value="processing" data-i18n="processing">قيد المعالجة</option>
+              <option value="request_sent" data-i18n="requested">تم الطلب</option>
+              <option value="skipped_mode" data-i18n="skipped">تم التخطي</option>
+              <option value="quota_blocked" data-i18n="quotaBlocked">محظور بالحصة</option>
+              <option value="error" data-i18n="errors">الأخطاء</option>
+            </select>
+          </label>
+        </div>
+        <div id="queueList" class="queue-list"></div>
+        <div id="queueEmpty" class="empty-state">
+          <div class="empty-illustration" aria-hidden="true">
+            <svg viewBox="0 0 64 64"><path d="M14 12h36v40H14z"/><path d="M22 23h20M22 32h20M22 41h12"/></svg>
+          </div>
+          <strong data-i18n="queueEmptyTitle">الطابور فارغ</strong>
+          <span data-i18n="queueEmptyBody">حمّل خريطة موقع لاكتشاف الروابط.</span>
+        </div>
+        <div class="pagination" id="pagination" hidden>
+          <button id="previousPage" class="icon-button" type="button" aria-label="صفحة الطابور السابقة">→</button>
+          <span id="pageLabel">صفحة 1 من 1</span>
+          <button id="nextPage" class="icon-button" type="button" aria-label="صفحة الطابور التالية">←</button>
+        </div>
+      </section>
+
+      <section class="card log-card" aria-labelledby="logTitle" data-wizard-step="4" hidden>
+        <div class="log-heading">
+          <div>
+            <span class="step-label" data-i18n="diagnostics">التشخيص</span>
+            <h2 id="logTitle" data-i18n="activity">النشاط</h2>
+          </div>
+          <div class="mini-actions">
+            <button id="copyLogsButton" class="icon-button" type="button" aria-label="نسخ سجل النشاط" title="نسخ السجل">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+            </button>
+            <button id="clearLogsButton" class="icon-button" type="button" aria-label="مسح سجل النشاط" title="مسح السجل">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 14h10l1-14M10 11v6m4-6v6"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="activityLog" class="activity-log" role="log" aria-live="polite"></div>
+        <div id="logEmpty" class="log-empty" data-i18n="logEmpty">سيظهر النشاط هنا أثناء عملك.</div>
+      </section>
+
+      <div id="wizardControls" class="wizard-controls">
+        <button id="wizardBackButton" class="button button-secondary" type="button" hidden>
+          <svg class="nav-arrow back-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          <span data-i18n="back">رجوع</span>
+        </button>
+        <button id="wizardNextButton" class="button button-primary" type="button">
+          <span id="wizardNextText" data-i18n="next">التالي</span>
+          <svg class="nav-arrow next-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+
+      </div>
+    </main>
+
+    <footer>
+      <span data-i18n="copyright">© 2026 IndexFlow. جميع الحقوق محفوظة.</span>
+      <span class="footer-credit" dir="ltr"><a class="linkedin-badge" href="https://www.linkedin.com/in/muhammed-yasser-seo-specialist/" target="_blank" rel="noopener" aria-label="بروفايل لينكدإن: Muhammed Yasser" title="بروفايل لينكدإن: Muhammed Yasser"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29ZM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12ZM7.12 20.45H3.56V9h3.56v11.45Z"/></svg></a><span>By: Muhammed Yasser</span></span>
+    </footer>
+  </div>
+
+  <dialog id="resetDialog" class="confirm-dialog">
+    <form method="dialog">
+      <div class="dialog-icon" aria-hidden="true">!</div>
+      <h2 data-i18n="resetTitle">إعادة ضبط كل شيء؟</h2>
+      <p data-i18n="resetBody">سيؤدي هذا إلى مسح الطابور وسجل المعالجة والإعدادات والنشاط وبيانات الحصة. ستبقى اللغة كما هي.</p>
+      <div class="dialog-actions">
+        <button class="button button-secondary" value="cancel" data-i18n="cancel">إلغاء</button>
+        <button id="confirmResetButton" class="button button-danger" value="confirm" data-i18n="resetAll">مسح كل البيانات</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="completionDialog" class="confirm-dialog completion-dialog">
+    <div class="dialog-icon" aria-hidden="true">✓</div>
+    <h2 data-i18n="completionDialogTitle">خلص الطابور!</h2>
+    <p id="completionDialogBody"></p>
+    <div class="dialog-actions">
+      <button id="completionDialogClose" class="button button-primary" type="button" data-i18n="completionOk">تمام</button>
+    </div>
+  </dialog>
+
+  <dialog id="quotaDialog" class="confirm-dialog quota-dialog">
+    <div class="dialog-icon" aria-hidden="true">!</div>
+    <h2 data-i18n="quotaDialogTitle">انتهت الحصة اليومية</h2>
+    <p id="quotaDialogBody" data-i18n="quotaDialogBody">بلغت الإضافة حد الفهرسة اليومي في Google Search Console، وتم إيقاف الطابور بأمان. جرّب غدًا بعد تجديد الحصة.</p>
+    <div class="dialog-actions">
+      <button id="quotaDialogClose" class="button button-primary" type="button" data-i18n="quotaDialogOk">تمام، هكمّل غدًا</button>
+    </div>
+  </dialog>
+
+  <dialog id="aboutDialog" class="confirm-dialog about-dialog">
+    <img id="aboutAvatar" class="about-avatar" src="avatar.jpg" alt="Muhammed Yasser">
+    <h2 data-i18n="aboutTitle">IndexFlow — الفهرسة الجماعية</h2>
+    <p data-i18n="aboutBody">بتجمع روابطك من خريطة موقع أو ملف أو لصق مباشر، وبتطلب فهرستها داخل Google Search Console تلقائيًا وبأمان — بواجهة عربية كاملة، ومن غير أي حساب أو سيرفرات.</p>
+    <div class="dialog-actions">
+      <button id="aboutClose" class="button button-primary" type="button" data-i18n="aboutOk">فهمت</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="side-panel.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "name": "IndexFlow",
+  "version": "1.13.2",
+  "description": "IndexFlow — طلب فهرسة جماعي لروابطك داخل Google Search Console من خريطة موقع أو ملف أو قائمة روابط مباشرة.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms",
+    "notifications",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://search.google.com/search-console/*",
+        "https://search.google.com/u/*/search-console/*"
+      ],
+      "js": [
+        "content-script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "side-panel.html"
+  },
+  "action": {
+    "default_title": "IndexFlow — الفهرسة الجماعية",
+    "default_icon": {
+      "72": "icons/icon-72x72.png",
+      "96": "icons/icon-96x96.png",
+      "128": "icons/icon-128x128.png"
+    }
+  },
+  "icons": {
+    "72": "icons/icon-72x72.png",
+    "96": "icons/icon-96x96.png",
+    "128": "icons/icon-128x128.png",
+    "144": "icons/icon-144x144.png",
+    "152": "icons/icon-152x152.png",
+    "192": "icons/icon-192x192.png",
+    "384": "icons/icon-384x384.png",
+    "512": "icons/icon-512x512.png"
+  }
+}
