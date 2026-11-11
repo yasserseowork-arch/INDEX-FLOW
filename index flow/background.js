@@ -5416,8 +5416,122 @@ async function notifyCompletionOnce(at, notified) {
   } catch {
   }
 }
+// GSC Site Tools: open optional reports and perform explicitly requested UI actions.
+const GSC_TOOL_PAGES = Object.freeze({
+  pages: "index",
+  sitemaps: "sitemaps",
+  settings: "settings",
+  "cwv-mobile": "core-web-vitals/mobile",
+  "cwv-desktop": "core-web-vitals/desktop"
+});
+function propertyFromGscUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.hostname !== "search.google.com" || !parsed.pathname.includes("search-console")) return null;
+    const resourceId = parsed.searchParams.get("resource_id");
+    return resourceId ? { resourceId, prefix: parsed.pathname.match(/^\/(?:u\/\d+\/)?search-console/)?.[0]?.replace(/\/search-console$/, "") || "" } : null;
+  } catch {
+    return null;
+  }
+}
+async function getGscToolContext() {
+  const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const candidates = [];
+  if (active) candidates.push(active);
+  const openTabs = await chrome.tabs.query({ url: ["https://search.google.com/*"] }).catch(() => []);
+  for (const tab of openTabs) if (!candidates.some((item) => item.id === tab.id)) candidates.push(tab);
+  candidates.sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)) || (b.lastAccessed || 0) - (a.lastAccessed || 0));
+  for (const tab of candidates) {
+    const found = propertyFromGscUrl(tab.url || "");
+    if (found) {
+      const host = resourceIdHost(`https://search.google.com/?resource_id=${encodeURIComponent(found.resourceId)}`);
+      return { ...found, tabId: tab.id, label: host || found.resourceId, inferred: false };
+    }
+  }
+  const state = await getState();
+  const sourceUrl = state.settings.sitemapUrl || state.queue.find((item) => item.url)?.url || "";
+  const domain = getSitemapDomain(sourceUrl);
+  if (domain) {
+    const remembered = await recallPropertyForm(domain);
+    const resourceId = remembered || `sc-domain:${domain}`;
+    return { resourceId, prefix: "", tabId: null, label: `${domain} · Property ${remembered ? "المحفوظ" : "تلقائي"}`, inferred: true };
+  }
+  throw new Error("افتح Google Search Console على الـ Property المطلوب، أو حمّل Sitemap / روابط الموقع أولًا.");
+}
+function buildGscToolUrl(context, page) {
+  const prefix = context.prefix || "";
+  const params = new URLSearchParams({ resource_id: context.resourceId });
+  return `https://search.google.com${prefix}/search-console/${page}?${params.toString()}`;
+}
+async function openGscToolTab(context, page) {
+  const tab = await chrome.tabs.create({ url: buildGscToolUrl(context, page), active: true });
+  if (tab.id === undefined) throw new Error("تعذر فتح صفحة Google Search Console.");
+  await waitForTabReady(tab.id, 45e3);
+  await ensureContentScript(tab.id);
+  return tab;
+}
+async function sendGscToolAction(tabId, action, payload = {}) {
+  await ensureContentScript(tabId);
+  const response = await sendToTab(tabId, { type: action, ...payload });
+  if (!response?.success) throw new Error(response?.error || "تعذر قراءة واجهة Search Console.");
+  return response.data;
+}
+async function handleGscToolMessage(message) {
+  const context = await getGscToolContext();
+  if (message.type === "GSC_GET_CONTEXT") {
+    let availability;
+    if (context.tabId !== null) {
+      try { availability = await sendGscToolAction(context.tabId, "GSC_GET_REPORT_AVAILABILITY"); } catch { availability = undefined; }
+    }
+    return { success: true, context, availability };
+  }
+  if (message.type === "GSC_OPEN_TOOL") {
+    const page = GSC_TOOL_PAGES[message.tool];
+    if (typeof page !== "string") throw new Error("نوع تقرير GSC غير معروف.");
+    const tab = await openGscToolTab(context, page);
+    return { success: true, context, tabId: tab.id, message: `تم فتح تقرير ${message.tool} في تبويب جديد.` };
+  }
+  if (message.type === "GSC_SCAN_REPORT") {
+    if (!context.tabId) throw new Error("لا يوجد تبويب Search Console مفتوح. افتح تقرير الصفحات ثم أعد الفحص.");
+    const report = await sendGscToolAction(context.tabId, "GSC_READ_REPORT");
+    return { success: true, context, report };
+  }
+  if (message.type === "GSC_SCAN_SITEMAPS") {
+    const tab = await openGscToolTab(context, GSC_TOOL_PAGES.sitemaps);
+    const report = await sendGscToolAction(tab.id, "GSC_READ_SITEMAPS");
+    return { success: true, context, report };
+  }
+  if (message.type === "GSC_START_VALIDATION") {
+    if (!context.tabId) throw new Error("افتح تفاصيل المشكلة في Search Console أولًا.");
+    const result = await sendGscToolAction(context.tabId, "GSC_START_VALIDATION");
+    return { success: true, context, ...result };
+  }
+  if (message.type === "GSC_SUBMIT_SITEMAP") {
+    let url;
+    try { url = new URL(String(message.sitemapUrl || "").trim()); } catch { throw new Error("رابط Sitemap غير صالح."); }
+    if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("رابط Sitemap لازم يبدأ بـ http أو https.");
+    const tab = await openGscToolTab(context, GSC_TOOL_PAGES.sitemaps);
+    const result = await sendGscToolAction(tab.id, "GSC_SUBMIT_SITEMAP", { sitemapUrl: url.toString(), propertyId: context.resourceId });
+    return { success: true, context, ...result };
+  }
+  if (message.type === "GSC_REQUEST_ROBOTS_RECRAWL") {
+    const tab = await openGscToolTab(context, GSC_TOOL_PAGES.settings);
+    const result = await sendGscToolAction(tab.id, "GSC_REQUEST_ROBOTS_RECRAWL");
+    return { success: true, context, ...result };
+  }
+  throw new Error("إجراء GSC غير معروف.");
+}
+
 async function handleMessage(message, sender) {
   switch (message.type) {
+    case "GSC_GET_CONTEXT":
+    case "GSC_OPEN_TOOL":
+    case "GSC_SCAN_REPORT":
+    case "GSC_SCAN_SITEMAPS":
+    case "GSC_START_VALIDATION":
+    case "GSC_SUBMIT_SITEMAP":
+    case "GSC_REQUEST_ROBOTS_RECRAWL":
+      return handleGscToolMessage(message);
     case "GET_STATE":
       return { success: true, state: await getState() };
     case "LOAD_SITEMAP":

@@ -1081,6 +1081,153 @@
     if (runId && activeRun.runId !== runId) return;
     activeRun.controller.abort();
   }
+  function gscToolText(element) {
+    return normalizeText(element?.innerText || element?.textContent || "");
+  }
+  function gscToolVisible(element) {
+    if (!(element instanceof HTMLElement)) return false;
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) !== 0 && rect.width > 0 && rect.height > 0;
+  }
+  function validationState(text) {
+    const value = normalizeText(text);
+    if (/\bnot\s*started\b|\bnot-started\b|لم\s*يبدأ|لم\s*تبدأ|لم\s*يتم\s*البدء/.test(value)) return { key: "not_started", label: "Not Started" };
+    if (/\bstarted\b|\bin\s*progress\b|جار[ٍي]?\s*التحقق|بدأ\s*التحقق|قيد\s*التحقق/.test(value)) return { key: "started", label: "Started" };
+    if (/\bpassed\b|\bvalid\b|اجتاز|تم\s*التحقق|صالح/.test(value)) return { key: "passed", label: "Passed" };
+    if (/\bfailed\b|فشل\s*التحقق|لم\s*يجتز/.test(value)) return { key: "failed", label: "Failed" };
+    return null;
+  }
+  function findVisibleAction(patterns, root = document) {
+    const candidates = root.querySelectorAll("button, [role=button], [role=menuitem], a");
+    return Array.from(candidates).find((element) => gscToolVisible(element) && patterns.some((pattern) => pattern.test(gscToolText(element) || element.getAttribute("aria-label") || element.getAttribute("title") || ""))) || null;
+  }
+  function getGscReportAvailability() {
+    const navItems = Array.from(document.querySelectorAll('nav a, nav button, [role="navigation"] a, [role="navigation"] button, [role="navigation"] [role="link"]'))
+      .filter(gscToolVisible)
+      .map((element) => gscToolText(element));
+    const coreWebVitalsVisible = navItems.some((text) => /core web vitals|مؤشرات الويب الأساسية/.test(text));
+    return { coreWebVitalsVisible, inspectedNavigation: navItems.length > 0 };
+  }
+  function readGscReport() {
+    const body = document.body?.innerText || "";
+    const normalizedBody = normalizeText(body);
+    const candidates = new Set([
+      ...document.querySelectorAll('[role="row"]'),
+      ...document.querySelectorAll("table tr")
+    ]);
+    const rows = [];
+    for (const element of candidates) {
+      if (!gscToolVisible(element)) continue;
+      const text = (element.innerText || "").replace(/\s+/g, " ").trim();
+      if (!text || text.length < 3 || text.length > 1200) continue;
+      const status = validationState(text);
+      if (!status && !/not indexed|excluded|indexing|صفحات|مفهرس|مستبعد|robots\.txt|noindex|blocked|forbidden|403|404|canonical|alternate page|redirect|soft 404|server error|discovered|crawled|core web vitals|cls|lcp|inp|غير موجود|محظور|ممنوع|تحويل|صفحة بديلة|روبوت|خطأ.*الخادم/i.test(text)) continue;
+      const lines = (element.innerText || "").split(/\n+/).map((part) => part.trim()).filter(Boolean);
+      const reason = lines.find((line) => !validationState(line) && !/^website$|^google$|^not applicable$|^n\/a$/i.test(line)) || text;
+      const countMatch = text.match(/(?:^|\s)(\d[\d,.\s]*\d|\d+)(?:\s|$)/);
+      rows.push({ reason: reason.slice(0, 240), text: text.slice(0, 500), validation: status?.key || "unknown", validationLabel: status?.label || "", count: countMatch?.[1]?.trim() || "" });
+      if (rows.length >= 120) break;
+    }
+    const cwvNoData = /not enough data|no data available|insufficient data|بيانات غير كافية|لا توجد بيانات كافية|لا تتوفر بيانات/.test(normalizedBody);
+    const title = document.querySelector('h1, [role="heading"][aria-level="1"]')?.innerText?.trim() || document.title || "Google Search Console";
+    let notStartedCount = rows.filter((row) => row.validation === "not_started").length;
+    if (!notStartedCount && validationState(body)?.key === "not_started") notStartedCount = 1;
+    const startAction = findVisibleAction([/^(start validation|start fixing|validate fix|ابدأ التحقق|بدء التحقق|التحقق من الإصلاح)$/i]);
+    const pageIsCwv = /core-web-vitals/i.test(location.pathname);
+    const availability = pageIsCwv && cwvNoData ? "التقرير الاختياري لا يحتوي بيانات كافية حاليًا." : "";
+    return { title: title.slice(0, 200), url: location.href, rows, rowCount: rows.length, notStartedCount, canStartValidation: Boolean(startAction && notStartedCount > 0), availability, cwvNoData };
+  }
+  function readGscSitemaps() {
+    const candidates = new Set([...document.querySelectorAll('[role="row"]'), ...document.querySelectorAll("table tr")]);
+    const rows = [];
+    for (const element of candidates) {
+      if (!gscToolVisible(element)) continue;
+      const raw = element.innerText || "";
+      const lines = raw.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+      if (!lines.length || /^(sitemap|type|submitted|last read|status|discovered pages)$/i.test(lines[0])) continue;
+      const link = Array.from(element.querySelectorAll("a[href]"))
+        .find((candidate) => /sitemap/i.test(`${candidate.href} ${candidate.innerText || ""}`));
+      const urlMatch = raw.match(/https?:\/\/[\s\S]*?\.xml(?:\.gz)?|\/[^\s]*sitemap[\s\S]*?\.xml(?:\.gz)?/i);
+      const url = link?.href || (urlMatch?.[0] || "").replace(/\s+/g, "");
+      if (!url) continue;
+      const statusLine = lines.find((line) => /success|couldn.t fetch|fetch error|pending|processing|failed|successfully|نجاح|تعذر|قيد المعالجة|فشل/i.test(line)) || "";
+      const countMatches = [...raw.matchAll(/(?:^|\s)(\d[\d,.]*)(?=\s|$)/g)].map((match) => match[1]);
+      const total = countMatches.length ? countMatches[countMatches.length - 1] : "";
+      rows.push({ sitemap: url.slice(0, 600), status: statusLine.slice(0, 100) || "", count: total, text: raw.replace(/\s+/g, " ").trim().slice(0, 500) });
+      if (rows.length >= 100) break;
+    }
+    return { title: document.querySelector('h1, [role="heading"][aria-level="1"]')?.innerText?.trim() || "Sitemaps", url: location.href, rows, rowCount: rows.length };
+  }
+  async function startVisibleValidation() {
+    const report = readGscReport();
+    if (!report.notStartedCount) return { started: false, message: "لم أجد حالة Not Started ظاهرة في الصفحة الحالية. افتح تفاصيل المشكلة ثم أعد المحاولة." };
+    const action = findVisibleAction([/^(start validation|start fixing|validate fix|ابدأ التحقق|بدء التحقق|التحقق من الإصلاح)$/i]);
+    if (!action) return { started: false, message: "حالة Not Started موجودة، لكن زر بدء التحقق غير ظاهر في هذه الصفحة. افتح تفاصيل المشكلة في Search Console؛ قد يلزم إصلاح الموقع أولًا." };
+    action.click();
+    return { started: true, message: "تم الضغط على بدء التحقق في Search Console. راجع الصفحة للتأكد من قبول الطلب." };
+  }
+  async function submitVisibleSitemap(sitemapUrl, propertyId) {
+    let target;
+    try { target = new URL(String(sitemapUrl || "")); } catch { return { status: "unavailable", available: false, message: "رابط Sitemap غير صالح." }; }
+    const inputs = Array.from(document.querySelectorAll("input:not([type=hidden]):not([type=checkbox]):not([type=radio])"))
+      .filter((input) => gscToolVisible(input) && !input.disabled);
+    const input = inputs.find((candidate) => /sitemap|site map|خريطة الموقع/i.test(`${candidate.placeholder || ""} ${candidate.getAttribute("aria-label") || ""} ${candidate.name || ""} ${candidate.parentElement?.innerText || ""}`));
+    if (!input) return { status: "unavailable", available: false, message: "لم أجد حقل إضافة Sitemap. تأكد أن تبويب Sitemaps فتح على الـ Property الصحيح." };
+    const propertyHost = String(propertyId || "").replace(/^sc-domain:/, "").replace(/^sc-/, "").replace(/^https?:\/\//, "").split(/[/?#]/)[0].toLowerCase();
+    const prefixText = `${input.parentElement?.innerText || ""} ${input.parentElement?.parentElement?.innerText || ""}`;
+    const visiblePrefix = prefixText.match(/https?:\/\/[^\s/]+/i)?.[0];
+    let value = target.toString();
+    if (visiblePrefix) {
+      let prefixHost = "";
+      try { prefixHost = new URL(visiblePrefix).hostname.toLowerCase(); } catch {}
+      if (prefixHost && target.hostname.toLowerCase() !== prefixHost && target.hostname.toLowerCase() !== propertyHost && !propertyHost.endsWith(`.${target.hostname.toLowerCase()}`)) {
+        return { status: "unavailable", available: false, message: `الخريطة ${target.hostname} لا تطابق الـ Property الحالي (${propertyHost || prefixHost}).` };
+      }
+      if (target.hostname.toLowerCase() === prefixHost) value = `${target.pathname.replace(/^\//, "")}${target.search}`;
+    }
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    if (valueSetter) valueSetter.call(input, value); else input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const submitButton = findVisibleAction([/^(submit|add|إرسال|إضافة|إرسال خريطة الموقع)$/i]);
+    if (!submitButton || submitButton.disabled || submitButton.getAttribute("aria-disabled") === "true") {
+      return { status: "unavailable", available: false, message: "املأ الحقل يدويًا في صفحة Sitemaps؛ زر الإرسال غير متاح أو تغيرت واجهة Google." };
+    }
+    submitButton.click();
+    return { status: "submitted", available: true, message: "تم إرسال Sitemap إلى Search Console. انتظر حتى تظهر نتيجة Google في جدول الخرائط." };
+  }
+  async function requestRobotsRecrawl() {
+    const robotCandidates = Array.from(document.querySelectorAll('[role="row"], table tr, section, article, div'))
+      .filter((element) => gscToolVisible(element) && /robots\.txt/i.test(element.innerText || ""));
+    if (!robotCandidates.length) return { available: false, message: "تقرير robots.txt غير ظاهر لهذا الـ Property. قد لا تتوفر هذه الخانة لكل المواقع." };
+    const openPatterns = [/^(open report|عرض التقرير|فتح التقرير)$/i];
+    let row = robotCandidates.find((element) => element.matches('[role="row"], tr') && findVisibleAction(openPatterns, element))
+      || robotCandidates.find((element) => findVisibleAction(openPatterns, element))
+      || robotCandidates.filter((element) => (element.innerText || "").length < 700).sort((a, b) => (a.innerText || "").length - (b.innerText || "").length)[0];
+    if (!row) return { available: false, message: "لم أجد بطاقة robots.txt أو زر فتح التقرير." };
+    const openReport = findVisibleAction(openPatterns, row);
+    if (openReport) {
+      openReport.click();
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      const refreshed = Array.from(document.querySelectorAll('[role="row"], table tr, section, article, div'))
+        .filter((element) => gscToolVisible(element) && /robots\.txt/i.test(element.innerText || ""));
+      row = refreshed.find((element) => element.matches('[role="row"], tr') && element.querySelector('button, [role="button"]'))
+        || refreshed.filter((element) => (element.innerText || "").length < 900).sort((a, b) => (a.innerText || "").length - (b.innerText || "").length)[0]
+        || row;
+    }
+    let menuButton = Array.from(row.querySelectorAll('button, [role="button"]')).find((element) => gscToolVisible(element) && /more|menu|options|المزيد|قائمة|المزيد من الخيارات/i.test(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""} ${gscToolText(element)}`));
+    if (!menuButton) menuButton = Array.from(row.querySelectorAll('button, [role="button"]')).filter(gscToolVisible).at(-1);
+    if (!menuButton) return { available: false, message: "لم أجد قائمة الإجراءات الخاصة بملف robots.txt في هذه الصفحة." };
+    menuButton.click();
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const recrawl = findVisibleAction([/^(request a recrawl|request recrawl|recrawl|طلب إعادة الزحف|إعادة الزحف)$/i]);
+    if (!recrawl) return { available: false, message: "لم يظهر خيار Request a recrawl. قد لا يكون متاحًا لهذا الموقع أو تغيرت واجهة Google." };
+    recrawl.click();
+    return { available: true, requested: true, message: "تم اختيار طلب إعادة زحف robots.txt. اتبع أي تأكيد إضافي يظهر في Search Console." };
+  }
+
   function installListener() {
     const marker = "__gscBulkIndexerContentLoaded";
     const markedWindow = window;
@@ -1088,6 +1235,24 @@
     markedWindow[marker] = true;
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       switch (message.type) {
+        case "GSC_GET_REPORT_AVAILABILITY":
+          sendResponse({ success: true, data: getGscReportAvailability() });
+          return false;
+        case "GSC_READ_REPORT":
+          sendResponse({ success: true, data: readGscReport() });
+          return false;
+        case "GSC_READ_SITEMAPS":
+          sendResponse({ success: true, data: readGscSitemaps() });
+          return false;
+        case "GSC_START_VALIDATION":
+          void startVisibleValidation().then((data) => sendResponse({ success: true, data })).catch((error) => sendResponse({ success: false, error: errorMessage(error) }));
+          return true;
+        case "GSC_SUBMIT_SITEMAP":
+          void submitVisibleSitemap(message.sitemapUrl, message.propertyId).then((data) => sendResponse({ success: true, data })).catch((error) => sendResponse({ success: false, error: errorMessage(error) }));
+          return true;
+        case "GSC_REQUEST_ROBOTS_RECRAWL":
+          void requestRobotsRecrawl().then((data) => sendResponse({ success: true, data })).catch((error) => sendResponse({ success: false, error: errorMessage(error) }));
+          return true;
         case "PING":
           sendResponse({ success: true, activeRunId: activeRun?.runId, loopAlive: Boolean(activeRun?.loopAlive) });
           return false;

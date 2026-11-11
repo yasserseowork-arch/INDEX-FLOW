@@ -31,6 +31,11 @@
     </header>
 
     <main>
+      <nav class="primary-view-tabs" aria-label="أدوات IndexFlow">
+        <button id="workflowTab" class="primary-view-tab active" type="button" aria-pressed="true">الفهرسة الجماعية</button>
+        <button id="siteToolsTab" class="primary-view-tab" type="button" aria-pressed="false">تغطية الموقع وأدوات GSC</button>
+      </nav>
+      <div id="workflowView">
       <nav id="wizardProgress" class="wizard-progress" aria-label="مراحل الإعداد">
         <button class="wizard-step" type="button" data-step="1" aria-current="step"><span>1</span><strong data-i18n="wizardSource">الرابط</strong></button>
         <span class="wizard-line" aria-hidden="true"></span>
@@ -297,6 +302,60 @@
         </button>
 
       </div>
+      </div>
+
+      <section id="siteToolsView" class="site-tools-view" hidden aria-labelledby="siteToolsTitle">
+        <header class="site-tools-heading">
+          <span class="step-label">أدوات Google Search Console</span>
+          <h2 id="siteToolsTitle">تغطية الموقع والفهرسة</h2>
+          <p>افحص تقارير الموقع وافتح إجراءات Search Console المتاحة للـ Property الحالي.</p>
+          <div class="site-property-line"><span>الموقع الحالي:</span><strong id="sitePropertyLabel">افتح Search Console أو حمّل Sitemap أولًا</strong></div>
+        </header>
+
+        <section class="card site-tool-card" aria-labelledby="coverageToolsTitle">
+          <div class="site-tool-title"><span class="site-tool-icon">▤</span><div><h3 id="coverageToolsTitle">تغطية الصفحات ومشاكل الفهرسة</h3><p>اعرض أسباب الاستبعاد وحالة التحقق، بما فيها Not Started إن ظهرت لهذا الموقع.</p></div></div>
+          <div class="site-tool-actions">
+            <button id="openPagesReport" class="button button-primary" type="button">فتح تقرير الصفحات</button>
+            <button id="scanCoverageReport" class="button button-secondary" type="button">فحص التقرير المفتوح</button>
+          </div>
+          <div id="coverageSummary" class="coverage-summary" hidden></div>
+          <div id="coverageIssueList" class="coverage-issue-list" aria-live="polite"></div>
+          <button id="exportCoverageReport" class="button button-secondary validation-action" type="button" hidden>تصدير تقرير التغطية CSV</button>
+          <button id="startValidationButton" class="button button-secondary validation-action" type="button" hidden>بدء التحقق من الإصلاح الظاهر</button>
+          <p class="site-tool-note">الحالة «Not Started» لا تعني أن الإضافة تقدر تصلّح سبب المشكلة تلقائيًا. أصلح السبب في الموقع أولًا، ثم ابدأ التحقق من صفحة المشكلة إذا كان Google يعرض الإجراء.</p>
+        </section>
+
+        <section class="card site-tool-card" aria-labelledby="sitemapToolsTitle">
+          <div class="site-tool-title"><span class="site-tool-icon">⌁</span><div><h3 id="sitemapToolsTitle">خرائط الموقع</h3><p>افتح تقرير Sitemap، أو أرسل / أعد إرسال رابط خريطة إلى Search Console.</p></div></div>
+          <label class="site-tool-label" for="gscSitemapUrl">رابط خريطة الموقع</label>
+          <input id="gscSitemapUrl" class="site-tool-input" type="url" inputmode="url" placeholder="https://example.com/sitemap.xml" autocomplete="url">
+          <div class="site-tool-actions">
+            <button id="openSitemapsReport" class="button button-secondary" type="button">فتح تقرير Sitemaps</button>
+            <button id="scanSitemapsReport" class="button button-secondary" type="button">قراءة الخرائط المرسلة</button>
+            <button id="submitGscSitemap" class="button button-primary" type="button">إرسال / تحديث Sitemap</button>
+          </div>
+          <div id="sitemapReportSummary" class="coverage-issue-list" aria-live="polite"></div>
+          <p class="site-tool-note">إعادة الإرسال لا تضمن الفهرسة الفورية؛ Google هو من يقرأ الخريطة ويقرر الزحف.</p>
+        </section>
+
+        <section class="card site-tool-card" aria-labelledby="robotsToolsTitle">
+          <div class="site-tool-title"><span class="site-tool-icon">#</span><div><h3 id="robotsToolsTitle">ملف robots.txt</h3><p>افتح تقرير robots.txt أو اطلب إعادة الزحف إذا كان الخيار متاحًا.</p></div></div>
+          <div class="site-tool-actions">
+            <button id="openRobotsReport" class="button button-secondary" type="button">فتح تقرير robots.txt / الإعدادات</button>
+            <button id="requestRobotsRecrawl" class="button button-primary" type="button">طلب إعادة زحف robots.txt</button>
+          </div>
+          <p class="site-tool-note">تعديل محتوى robots.txt نفسه يتم على الاستضافة / الخادم، وليس من Search Console. قد لا يظهر التقرير أو خيار إعادة الزحف لكل Property.</p>
+        </section>
+
+        <section id="cwvToolsCard" class="card site-tool-card" aria-labelledby="cwvToolsTitle">
+          <div class="site-tool-title"><span class="site-tool-icon">◷</span><div><h3 id="cwvToolsTitle">Core Web Vitals</h3><p>تقارير الجوال وسطح المكتب اختيارية؛ قد لا تظهر لموقع لا يملك بيانات كافية.</p></div></div>
+          <div class="site-tool-actions">
+            <button id="openCwvMobile" class="button button-secondary" type="button">تقرير الجوال</button>
+            <button id="openCwvDesktop" class="button button-secondary" type="button">تقرير سطح المكتب</button>
+          </div>
+          <p class="site-tool-note">إذا كان التقرير غير متاح أو لا توجد بيانات، ستعرض Search Console حالته بدلًا من مشكلة في IndexFlow.</p>
+        </section>
+      </section>
     </main>
 
     <footer>

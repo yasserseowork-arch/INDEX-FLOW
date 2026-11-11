@@ -1092,7 +1092,206 @@ async function ingestFile(file) {
   }
   await loadDirect();
 }
+let siteToolsBusy = false;
+let lastCoverageReport = null;
+function setSiteToolsMode(enabled) {
+  const workflow = document.getElementById("workflowView");
+  const tools = document.getElementById("siteToolsView");
+  const workflowTab = document.getElementById("workflowTab");
+  const toolsTab = document.getElementById("siteToolsTab");
+  workflow.hidden = enabled;
+  tools.hidden = !enabled;
+  workflowTab.classList.toggle("active", !enabled);
+  toolsTab.classList.toggle("active", enabled);
+  workflowTab.setAttribute("aria-pressed", String(!enabled));
+  toolsTab.setAttribute("aria-pressed", String(enabled));
+  if (enabled) void refreshGscContext();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function setSiteToolsStatus(message, level = "info") {
+  const node = document.getElementById("coverageSummary");
+  node.hidden = !message;
+  node.className = `coverage-summary ${level}`;
+  node.textContent = message || "";
+}
+function setSiteToolsBusy(busy) {
+  siteToolsBusy = busy;
+  for (const button of document.querySelectorAll("#siteToolsView button")) button.disabled = busy;
+}
+async function refreshGscContext() {
+  try {
+    const response = await send({ type: "GSC_GET_CONTEXT" });
+    if (response?.success && response.context) {
+      document.getElementById("sitePropertyLabel").textContent = response.context.label || response.context.resourceId || "غير محدد";
+      if (response.availability?.inspectedNavigation && response.availability.coreWebVitalsVisible === false) document.getElementById("cwvToolsCard").hidden = true;
+      else if (response.availability?.coreWebVitalsVisible === true) document.getElementById("cwvToolsCard").hidden = false;
+      if (!document.getElementById("gscSitemapUrl").value && state.settings.sitemapUrl) document.getElementById("gscSitemapUrl").value = state.settings.sitemapUrl;
+    }
+  } catch {
+    // The GSC helper view remains usable for navigation guidance even before a property is open.
+  }
+}
+function coverageAdvice(reason) {
+  const value = String(reason || "").toLowerCase();
+  if (/noindex|مستبعد.*noindex|علامة.*noindex/.test(value)) return "لو الصفحة مقصود فهرستها، أزل noindex من HTML أو ترويسة HTTP؛ اتركه إذا كان الاستبعاد مقصودًا.";
+  if (/robots\.txt|blocked by robots|محظور.*روبوت/.test(value)) return "راجع robots.txt على الخادم واسمح بالزحف للمسار المقصود؛ لا تحظر ملفات CSS/JS اللازمة للعرض.";
+  if (/403|forbidden|ممنوع|محظور.*الوصول/.test(value)) return "اجعل الصفحة المقصودة متاحة لـ Googlebot وتحقق من WAF/الحماية والصلاحيات؛ الاستجابة المقصودة عادةً 200.";
+  if (/404|not found|غير موجود/.test(value)) return "أصلح الرابط أو أعد الصفحة إن كانت مطلوبة، وحدّث الروابط الداخلية والـ Sitemap؛ استخدم 301 فقط لبديل مكافئ.";
+  if (/canonical|alternate page|صفحة بديلة|أساسي/.test(value)) return "تحقق من canonical: وجّهه إلى النسخة المفضلة؛ الاستبعاد طبيعي إذا كانت هذه نسخة مكررة مقصودة.";
+  if (/redirect|تحويل|إعادة توجيه/.test(value)) return "حدّث الـ Sitemap والروابط الداخلية إلى الوجهة النهائية، وتأكد من عدم وجود سلسلة تحويل أو حلقة.";
+  if (/crawled.*not indexed|تم الزحف.*لم تتم الفهرسة/.test(value)) return "تأكد من جودة الصفحة وتميزها وإمكانية الوصول والربط الداخلي؛ قرار الفهرسة النهائي يعود إلى Google.";
+  if (/discovered.*not indexed|تم اكتشاف.*لم تتم الفهرسة/.test(value)) return "حسّن الربط الداخلي وسرعة/استقرار الخادم، وأبقِ الصفحة قابلة للفهرسة؛ تجنب تكرار طلبات الفهرسة.";
+  if (/server error|5\d\d|خطأ.*الخادم/.test(value)) return "افحص سجلات الخادم والتوافر والاستجابة لـ Googlebot، ثم أعد التحقق بعد إصلاح السبب.";
+  if (/soft 404|404 ناعم/.test(value)) return "قدّم محتوى مفيدًا مع استجابة 200، أو أرجع 404/410 حقيقيًا إذا كانت الصفحة غير موجودة.";
+  if (/cls|cumulative layout shift|إزاحة.*التخطيط/.test(value)) return "ثبّت أبعاد الصور والإعلانات، واحجز مساحة للعناصر المحقونة لتقليل القفزات البصرية.";
+  if (/lcp|largest contentful paint/.test(value)) return "حسّن صورة/عنصر LCP، قلّل تأخر الخادم والموارد الحاجبة، وحمّل العنصر الرئيسي مبكرًا.";
+  if (/inp|interaction to next paint/.test(value)) return "قلّل JavaScript الطويل والعمل على الخيط الرئيسي، وقسّم المهام وحسّن معالجات التفاعل.";
+  return "راجع سبب الاستبعاد، قابلية الزحف والفهرسة، والـ canonical قبل طلب التحقق من الإصلاح.";
+}
+function exportCoverageCsv() {
+  if (!lastCoverageReport?.rows?.length) return;
+  const quote = (value) => {
+    const text = String(value ?? "");
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const rows = [["الموقع", "سبب / حالة", "حالة التحقق", "عدد الصفحات", "اقتراح"]];
+  for (const row of lastCoverageReport.rows) rows.push([
+    lastCoverageReport.title || "",
+    row.reason || row.text || "",
+    row.validationLabel || "",
+    row.count || "",
+    coverageAdvice(row.reason || row.text)
+  ]);
+  const blob = new Blob(["\uFEFF" + rows.map((row) => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `indexflow-coverage-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 4e3);
+  showToast("تم تصدير تقرير التغطية");
+}
+function renderCoverageReport(report) {
+  lastCoverageReport = report;
+  const list = document.getElementById("coverageIssueList");
+  list.replaceChildren();
+  const summaryParts = [];
+  if (report?.title) summaryParts.push(report.title);
+  if (report?.notStartedCount) summaryParts.push(`Not Started: ${report.notStartedCount}`);
+  if (report?.rowCount) summaryParts.push(`صفوف مقروءة: ${report.rowCount}`);
+  if (report?.availability) summaryParts.push(report.availability);
+  setSiteToolsStatus(summaryParts.join(" · ") || "لم أجد صفوف تقرير ظاهرة. افتح تقرير الصفحات أو تفاصيل مشكلة داخل Search Console ثم أعد الفحص.", report?.notStartedCount ? "warning" : "info");
+  for (const row of report?.rows || []) {
+    const item = document.createElement("article");
+    item.className = `coverage-issue${row.validation === "not_started" ? " not-started" : ""}`;
+    const copy = document.createElement("div");
+    copy.className = "coverage-issue-copy";
+    const reason = document.createElement("strong");
+    reason.textContent = row.reason || row.text || "صف تقرير";
+    copy.append(reason);
+    const advice = document.createElement("small");
+    advice.className = "coverage-advice";
+    advice.textContent = coverageAdvice(row.reason || row.text);
+    copy.append(advice);
+    item.append(copy);
+    if (row.validationLabel) {
+      const badge = document.createElement("span");
+      badge.className = `validation-badge ${row.validation || "unknown"}`;
+      badge.textContent = row.validationLabel;
+      item.append(badge);
+    }
+    if (row.count) {
+      const count = document.createElement("span");
+      count.className = "coverage-count";
+      count.textContent = row.count;
+      item.append(count);
+    }
+    list.append(item);
+  }
+  const startButton = document.getElementById("startValidationButton");
+  startButton.hidden = !report?.canStartValidation;
+  document.getElementById("exportCoverageReport").hidden = !(report?.rows?.length);
+}
+function renderSitemapReport(report) {
+  const list = document.getElementById("sitemapReportSummary");
+  list.replaceChildren();
+  const rows = report?.rows || [];
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.className = "site-tool-note";
+    empty.textContent = "لم أجد خرائط مرسلة ظاهرة. تأكد من صلاحية الـ Property أو راجع صفحة Sitemaps المفتوحة.";
+    list.append(empty);
+    return;
+  }
+  for (const row of rows) {
+    const item = document.createElement("article");
+    item.className = "coverage-issue sitemap-report-row";
+    const url = document.createElement("strong");
+    url.textContent = row.sitemap || row.text || "Sitemap";
+    item.append(url);
+    const status = document.createElement("span");
+    status.className = `validation-badge ${row.validation || "unknown"}`;
+    status.textContent = row.status || row.validationLabel || "غير معروف";
+    item.append(status);
+    if (row.count) {
+      const count = document.createElement("span");
+      count.className = "coverage-count";
+      count.textContent = `${row.count} صفحة`;
+      item.append(count);
+    }
+    list.append(item);
+  }
+}
+async function runGscTool(type, payload = {}) {
+  if (siteToolsBusy) return;
+  setSiteToolsBusy(true);
+  setSiteToolsStatus("جارٍ الاتصال بـ Google Search Console…");
+  try {
+    const response = await send({ type, ...payload });
+    if (!response?.success) throw new Error(response?.error || "تعذر تنفيذ الإجراء.");
+    if (response.context?.label) document.getElementById("sitePropertyLabel").textContent = response.context.label;
+    if (type === "GSC_SCAN_REPORT") {
+      renderCoverageReport(response.report || {});
+    } else if (type === "GSC_SCAN_SITEMAPS") {
+      renderSitemapReport(response.report || {});
+      setSiteToolsStatus(`تمت قراءة ${response.report?.rowCount || 0} Sitemap من التقرير.`, response.report?.rowCount ? "success" : "warning");
+    } else if (type === "GSC_START_VALIDATION") {
+      setSiteToolsStatus(response.message || "تم إرسال طلب بدء التحقق إلى Search Console.", response.started ? "success" : "warning");
+      if (response.started) document.getElementById("startValidationButton").hidden = true;
+    } else {
+      setSiteToolsStatus(response.message || "تم فتح Search Console في تبويب جديد.", response.available === false ? "warning" : "success");
+      if (response.status === "submitted") showToast("تم إرسال Sitemap إلى Search Console");
+    }
+  } catch (error) {
+    setSiteToolsStatus(error instanceof Error ? error.message : String(error), "error");
+  } finally {
+    setSiteToolsBusy(false);
+  }
+}
+
 function bindEvents() {
+  document.getElementById("workflowTab").addEventListener("click", () => setSiteToolsMode(false));
+  document.getElementById("siteToolsTab").addEventListener("click", () => setSiteToolsMode(true));
+  document.getElementById("openPagesReport").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "pages" }));
+  document.getElementById("scanCoverageReport").addEventListener("click", () => void runGscTool("GSC_SCAN_REPORT"));
+  document.getElementById("exportCoverageReport").addEventListener("click", exportCoverageCsv);
+  document.getElementById("startValidationButton").addEventListener("click", () => void runGscTool("GSC_START_VALIDATION"));
+  document.getElementById("openSitemapsReport").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "sitemaps" }));
+  document.getElementById("scanSitemapsReport").addEventListener("click", () => void runGscTool("GSC_SCAN_SITEMAPS"));
+  document.getElementById("submitGscSitemap").addEventListener("click", () => {
+    const input = document.getElementById("gscSitemapUrl");
+    if (!input.value.trim() || !input.checkValidity()) {
+      setSiteToolsStatus("أدخل رابط Sitemap كاملًا يبدأ بـ http:// أو https://.", "error");
+      input.focus();
+      return;
+    }
+    void runGscTool("GSC_SUBMIT_SITEMAP", { sitemapUrl: input.value.trim() });
+  });
+  document.getElementById("openRobotsReport").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "settings" }));
+  document.getElementById("requestRobotsRecrawl").addEventListener("click", () => void runGscTool("GSC_REQUEST_ROBOTS_RECRAWL"));
+  document.getElementById("openCwvMobile").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "cwv-mobile" }));
+  document.getElementById("openCwvDesktop").addEventListener("click", () => void runGscTool("GSC_OPEN_TOOL", { tool: "cwv-desktop" }));
   ui.loadDirectUrls.addEventListener("click", () => void loadDirect());
   ui.directUrls.addEventListener("input", () => renderWizard());
   ui.directFile.addEventListener("change", () => {
